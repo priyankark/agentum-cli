@@ -15,18 +15,16 @@
     "prepublishOnly": "npm run build"
   },
   "keywords": [
-    "cli",
-    "terminal",
-    "websocket",
-    "mobile",
-    "pty",
-    "claude",
-    "copilot",
-    "codex",
-    "ai",
-    "agent",
-    "remote",
-    "vnc"
+    "vibe-coding",
+    "mobile-coding",
+    "code-from-phone",
+    "codex-mirror",
+    "claude-mirror",
+    "copilot-mirror",
+    "ai-agent-mobile",
+    "remote-coding",
+    "terminal-mirror",
+    "afk-coding"
   ],
   "author": "AirCodum (https://aircodum.com)",
   "license": "MIT",
