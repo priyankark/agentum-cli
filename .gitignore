@@ -1,4 +1,30 @@
+# Dependencies
 node_modules/
+
+# Build output
 dist/
+
+# Logs
 *.log
+npm-debug.log*
+
+# OS files
 .DS_Store
+Thumbs.db
+
+# Editor/IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Environment
+.env
+.env.local
+
+# Claude Code
+.claude/
+
+# TypeScript
+*.tsbuildinfo

@@ -2,22 +2,13 @@
 src/
 
 # Tests
-*.test.js
-*.test.ts
-test-*.js
-test-*.ts
-test-*.sh
-auto-test.js
-run-*.sh
+tests/
 
 # Dev files
-.swp
 .claude/
 tsconfig.json
-interactive-client.js
-.tsbuildinfo
-dist/.tsbuildinfo
+*.tsbuildinfo
 
-# Duplicate locks
-package-lock*.json
-!package-lock.json
+# Git
+.git/
+.gitignore
