@@ -7,7 +7,7 @@ Control AI coding agents from your phone. Mirror Claude Code, GitHub Copilot, an
 ```
 ┌──────────────┐     WebSocket      ┌──────────────┐
 │  Your Phone  │ ◄────────────────► │   Desktop    │
-│  (Agentum    │                    │  (ag start)  │
+│  (Agentum    │                    │(agentum start)│
 │   Mobile)    │                    │              │
 └──────────────┘                    └──────────────┘
                                            │
@@ -30,13 +30,13 @@ npm install -g agentum
 ### 2. Start the server
 
 ```bash
-ag start
+npx agentum start
 ```
 
-This shows your connection URL:
+This shows your connection info:
 ```
 Terminal server started on port 11042
-Connect from mobile: ws://<your-ip>:11042
+Connect from mobile using IP: <your-ip>, Port: 11042
 ```
 
 ### 3. Find your IP (if needed)
@@ -59,7 +59,9 @@ ipconfig      # Windows
 
 ### 5. Connect
 
-Open the mobile app and enter: `ws://<your-ip>:11042`
+Open the mobile app and enter:
+- **IP/Host**: Your desktop's IP address
+- **Port**: `11042` (default)
 
 That's it! Your AI agents now stream to your phone.
 
@@ -67,70 +69,73 @@ That's it! Your AI agents now stream to your phone.
 
 ## Commands
 
-### `ag start`
+### `agentum start`
 
 Start the server. Run this first.
 
 ```bash
-ag start                    # Default: port 11042
-ag start --port 8080        # Custom port
-ag start --no-vnc           # Disable screen sharing
+agentum start                    # Default: port 11042
+agentum start --port 8080        # Custom port
+agentum start --no-vnc           # Disable screen sharing
 ```
 
-### `ag run <command>`
+### `agentum run <command>`
 
 Run any command and mirror output to mobile.
 
 ```bash
-ag run "npm test"
-ag run "python train.py" -d     # Detached (background)
-ag run "make build" -n build    # Named session
+agentum run "npm test"
+agentum run "python train.py" -d     # Detached (background)
+agentum run "make build" -n build    # Named session
 ```
 
-### `ag list`
+### `agentum list`
 
 Show active sessions.
 
-### `ag attach <id>`
+### `agentum attach <id>`
 
 Attach to a session locally. Press `Ctrl+]` to detach.
 
-### `ag kill <id>`
+### `agentum kill <id>`
 
 Stop a session.
 
-### `ag screenshot`
+### `agentum screenshot`
 
 Capture screen to disk.
 
 ```bash
-ag screenshot                # Saves to /tmp
-ag screenshot -o ./shots     # Custom directory
+agentum screenshot                # Saves to /tmp
+agentum screenshot -o ./shots     # Custom directory
 ```
 
-### `ag notify`
+### `agentum notify`
 
 Push notification to phone.
 
 ```bash
-ag notify -t "Done" -b "Build complete"
-ag notify -t "Error" -b "Tests failed" -P high
+agentum notify -t "Done" -b "Build complete"
+agentum notify -t "Error" -b "Tests failed" -P high
 ```
 
 ---
 
-## Remote Access (Tailscale)
+## Remote Access (Tailscale) - Highly Recommended
 
-Access from anywhere, not just your local network.
+Access from anywhere, not just your local network. Works through firewalls and NATs.
 
 ### Setup
 
 1. Install [Tailscale](https://tailscale.com/download) on desktop and phone
 2. Sign in with same account on both
-3. Get your Tailscale IP: `tailscale ip -4`
-4. Connect from mobile: `ws://100.x.y.z:11042`
-
-Works through firewalls, NATs, from anywhere in the world.
+3. Start Tailscale:
+   ```bash
+   tailscale up
+   ```
+4. Connect from mobile:
+   - **IP/Host**: Your Tailscale IP (`tailscale ip -4`) or MagicDNS hostname (e.g., `your-desktop-name`)
+   - **Port**: `11042`
 
 ---
 
@@ -148,13 +153,25 @@ Works through firewalls, NATs, from anywhere in the world.
 - Node.js 18+
 - macOS, Linux, or Windows
 
+### AI Agent Prerequisites
+
+You need [Node.js](https://nodejs.org/) (v18+) installed. Then, install and authenticate the AI agents you want to control:
+
+| Agent | Install | Login |
+|-------|---------|-------|
+| Claude Code | `npm install -g @anthropic-ai/claude-code` | `claude` (follow prompts) |
+| GitHub Copilot | `gh extension install github/gh-copilot` | `gh auth login` |
+| OpenAI Codex | `npm install -g @openai/codex` | `codex` (follow prompts) |
+
+Only install and authenticate the agents you plan to use.
+
 ---
 
 ## Troubleshooting
 
 **Port in use?**
 ```bash
-ag start --port 8080
+agentum start --port 8080
 ```
 
 **Can't connect from phone?**
