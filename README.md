@@ -169,10 +169,6 @@ ifconfig | grep "inet "
 
 ---
 
-## License
-
-MIT
-
 ## Links
 
 - [Repository](https://github.com/priyankark/agentum-cli)
