@@ -1,6 +1,6 @@
 {
   "name": "agentum",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Mirror terminal sessions and AI coding agents to mobile over WebSocket",
   "main": "dist/index.js",
   "bin": {
