@@ -19,6 +19,20 @@ Control AI coding agents from your phone. Mirror Claude Code, GitHub Copilot, an
                                     └─────────────┘
 ```
 
+## Prerequisites
+
+You need [Node.js](https://nodejs.org/) (v18+) installed. Then, install and authenticate the AI agents you want to control:
+
+| Agent | Install | Login |
+|-------|---------|-------|
+| Claude Code | `npm install -g @anthropic-ai/claude-code` | `claude` (follow prompts) |
+| GitHub Copilot | `gh extension install github/gh-copilot` | `gh auth login` |
+| OpenAI Codex | `npm install -g @openai/codex` | `codex` (follow prompts) |
+
+Only install and authenticate the agents you plan to use.
+
+---
+
 ## Quick Setup
 
 ### 1. Install CLI on your desktop
@@ -147,23 +161,6 @@ Access from anywhere, not just your local network. Works through firewalls and N
 | 11043 | VNC       | Screen sharing (optional)|
 
 ---
-
-## Requirements
-
-- Node.js 18+
-- macOS, Linux, or Windows
-
-### AI Agent Prerequisites
-
-You need [Node.js](https://nodejs.org/) (v18+) installed. Then, install and authenticate the AI agents you want to control:
-
-| Agent | Install | Login |
-|-------|---------|-------|
-| Claude Code | `npm install -g @anthropic-ai/claude-code` | `claude` (follow prompts) |
-| GitHub Copilot | `gh extension install github/gh-copilot` | `gh auth login` |
-| OpenAI Codex | `npm install -g @openai/codex` | `codex` (follow prompts) |
-
-Only install and authenticate the agents you plan to use.
 
 ---
 
