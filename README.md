@@ -68,7 +68,7 @@ ipconfig      # Windows
 
 | Platform | Status |
 |----------|--------|
-| iOS      | Coming soon |
+| iOS      | [iOS link](https://apps.apple.com/app/aircodum-agentum/id6758521566) |
 | Android  | Coming soon |
 
 ### 5. Connect
