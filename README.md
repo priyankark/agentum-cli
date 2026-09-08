@@ -1,5 +1,8 @@
 # Agentum
 
+> Connection security changed: pairing and encrypted remote transport are now required. Read [Updated setup](SECURITY_CHANGES.md) before connecting.
+
+
 Control AI coding agents from your phone. Mirror Claude Code, GitHub Copilot, and OpenAI Codex to mobile - code from your couch, bed, or anywhere.
 
 ## How It Works

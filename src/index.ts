@@ -6,6 +6,7 @@
  */
 
 import { Command } from 'commander';
+import { authHeaders, getAuthToken } from './auth';
 import chalk from 'chalk';
 import { WebSocket } from 'ws';
 import { createServer, AgentumServer } from './server';
@@ -17,6 +18,7 @@ const DEFAULT_PORT = 11042;
 const DEFAULT_VNC_PORT = 11043;
 
 const program = new Command();
+program.command('pairing-token').description('Print the private token to pair the mobile app').action(() => { console.log(getAuthToken()); });
 
 /**
  * Format session state with color
@@ -74,7 +76,7 @@ async function serverCommand(options: { port: number; host?: string; vncPort?: n
   try {
     server = await createServer({
       port: options.port,
-      host: options.host || '0.0.0.0',
+      host: options.host || '127.0.0.1',
       vncPort: options.vncPort || DEFAULT_VNC_PORT,
       enableVnc: !options.noVnc,
     });
@@ -252,7 +254,7 @@ async function listCommand(options: { port: number }): Promise<void> {
   console.log(chalk.blue.bold('AirCodum-Agentum Sessions'));
   console.log(chalk.gray('─'.repeat(60)));
 
-  const ws = new WebSocket(`ws://127.0.0.1:${options.port}`);
+  const ws = new WebSocket(`ws://127.0.0.1:${options.port}`, { headers: authHeaders() });
 
   ws.on('open', () => {
     ws.send(JSON.stringify({
@@ -325,7 +327,7 @@ async function attachCommand(
   console.log(chalk.gray(`Attaching to session: ${sessionId}`));
   console.log();
 
-  const ws = new WebSocket(`ws://127.0.0.1:${options.port}`);
+  const ws = new WebSocket(`ws://127.0.0.1:${options.port}`, { headers: authHeaders() });
   let attached = false;
 
   ws.on('open', () => {
@@ -469,7 +471,7 @@ async function killCommand(
   sessionId: string,
   options: { port: number }
 ): Promise<void> {
-  const ws = new WebSocket(`ws://127.0.0.1:${options.port}`);
+  const ws = new WebSocket(`ws://127.0.0.1:${options.port}`, { headers: authHeaders() });
 
   ws.on('open', () => {
     ws.send(JSON.stringify({
@@ -520,7 +522,7 @@ program
   .description('Start the Agentum server')
   .option('-p, --port <port>', 'WebSocket server port', String(DEFAULT_PORT))
   .option('--vnc-port <port>', 'VNC server port', String(DEFAULT_VNC_PORT))
-  .option('-h, --host <host>', 'Host to bind to', '0.0.0.0')
+  .option('-h, --host <host>', 'Host to bind to', '127.0.0.1')
   .option('--no-vnc', 'Disable VNC server')
   .action(async (options) => {
     await serverCommand({
@@ -535,7 +537,7 @@ program
   .command('server')
   .description('Start the WebSocket server for mobile connections')
   .option('-p, --port <port>', 'Port to listen on for terminal sessions', String(DEFAULT_PORT))
-  .option('-h, --host <host>', 'Host to bind to', '0.0.0.0')
+  .option('-h, --host <host>', 'Host to bind to', '127.0.0.1')
   .option('--vnc-port <port>', 'Port to listen on for VNC screen sharing', String(DEFAULT_VNC_PORT))
   .option('--no-vnc', 'Disable VNC server')
   .action(async (options) => {

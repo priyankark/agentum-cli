@@ -8,7 +8,7 @@
  */
 
 import { spawn, ChildProcess } from 'child_process';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID as uuidv4 } from 'crypto';
 
 // Copilot streaming message types
 export interface CopilotStreamMessage {
@@ -179,7 +179,7 @@ export class CopilotSessionManager {
       'copilot',
       '--',
       '-p', prompt,
-      '--allow-all-tools',
+      ...(process.env.AGENTUM_ALLOW_UNSANDBOXED === '1' ? ['--allow-all-tools'] : []),
     ];
 
     return args;
@@ -191,7 +191,6 @@ export class CopilotSessionManager {
   private executeCopilotCommand(session: CopilotSession, args: string[]): Promise<void> {
     return new Promise((resolve, reject) => {
       console.log(`[COPILOT] Spawning: ${this.copilotBinaryPath}`);
-      console.log(`[COPILOT] Args: ${JSON.stringify(args)}`);
 
       // Set up environment with GitHub token if available
       const env = { ...process.env };

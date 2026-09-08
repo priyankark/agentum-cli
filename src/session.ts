@@ -4,7 +4,7 @@
  */
 
 import * as pty from 'node-pty';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID as uuidv4 } from 'crypto';
 import {
   Session,
   SessionConfig,
@@ -46,7 +46,6 @@ export class SessionManager {
     const fullArgs = command ? ['-c', command] : [];
 
     console.log(`[SESSION] Creating session ${sessionId}`);
-    console.log(`[SESSION] Shell: ${shell}, Command: "${command}", FullArgs: ${JSON.stringify(fullArgs)}`);
 
     // Create the PTY process
     const ptyProcess = pty.spawn(shell, fullArgs, {

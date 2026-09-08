@@ -230,7 +230,6 @@ export function handleKeyboardEvent(event: VNCKeyboardEvent): void {
     const normalizedKey = normalizeKeyName(key);
     const normalizedModifiers = normalizeModifiers(modifier);
 
-    console.log(`[VNC Input] KeyTap: "${key}" -> "${normalizedKey}"${normalizedModifiers.length > 0 ? ` with modifiers [${normalizedModifiers.join(', ')}]` : ''}`);
 
     if (normalizedModifiers.length > 0) {
       robot!.keyTap(normalizedKey, normalizedModifiers as any);
@@ -253,7 +252,6 @@ export function typeString(text: string): void {
   }
 
   try {
-    console.log(`[VNC Input] TypeString: "${text}"`);
     robot!.typeString(text);
   } catch (error) {
     console.error('[VNC Input] Error typing string:', error);
@@ -329,7 +327,6 @@ export function keyCombo(key: string, modifiers: string[]): void {
   try {
     const normalizedKey = normalizeKeyName(key);
     const normalizedModifiers = normalizeModifiers(modifiers);
-    console.log(`[VNC Input] KeyCombo: ${normalizedModifiers.join('+')}+${normalizedKey}`);
     robot!.keyTap(normalizedKey, normalizedModifiers as any);
   } catch (error) {
     console.error('[VNC Input] Error performing key combo:', error);

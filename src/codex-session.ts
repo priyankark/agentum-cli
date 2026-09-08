@@ -17,7 +17,7 @@
  */
 
 import { spawn, ChildProcess } from 'child_process';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID as uuidv4 } from 'crypto';
 import * as readline from 'readline';
 
 // Codex JSON streaming line types (JSONL format with --json flag)
@@ -196,7 +196,8 @@ export class CodexSessionManager {
     args.push('--json');
 
     // Skip permissions/sandbox for headless mode
-    args.push('--dangerously-bypass-approvals-and-sandbox');
+    if (process.env.AGENTUM_ALLOW_UNSANDBOXED === '1') args.push('--dangerously-bypass-approvals-and-sandbox');
+    else args.push('--sandbox', 'workspace-write');
 
     // Skip git repo check if configured
     if (session.config.skipGitRepoCheck) {
@@ -256,7 +257,6 @@ export class CodexSessionManager {
   private executeCodexCommand(session: CodexSession, args: string[]): Promise<void> {
     return new Promise((resolve, reject) => {
       console.log(`[CODEX] Spawning: ${this.codexBinaryPath}`);
-      console.log(`[CODEX] Args: ${JSON.stringify(args)}`);
 
       const proc = spawn(this.codexBinaryPath, args, {
         cwd: session.workingDirectory,
@@ -289,7 +289,6 @@ export class CodexSessionManager {
           });
         } catch (e) {
           // Not JSON, might be raw output - log it
-          console.log(`[CODEX] Raw output: ${line}`);
         }
       });
 
@@ -352,7 +351,6 @@ export class CodexSessionManager {
 
     // Prompt line (second line)
     if (jsonLine.prompt !== undefined) {
-      console.log(`[CODEX] Prompt received: ${jsonLine.prompt.slice(0, 50)}...`);
       return;
     }
 
@@ -363,7 +361,6 @@ export class CodexSessionManager {
     }
 
     // Unknown line format
-    console.log(`[CODEX] Unknown line format:`, jsonLine);
   }
 
   /**
@@ -454,7 +451,6 @@ export class CodexSessionManager {
       case 'agent_reasoning':
         // Model's internal reasoning (shown before the final answer)
         if (msg.text) {
-          console.log(`[CODEX] Reasoning: ${msg.text.slice(0, 100)}${msg.text.length > 100 ? '...' : ''}`);
         }
         break;
 
