@@ -156,6 +156,7 @@ export class AgentumServer {
           if (this.config.enableVnc) {
             try {
               this.vncServer = await createVNCServer(this.config.vncPort, this.config.host);
+              for (const client of this.clients.values()) this.sendCapabilities(client.socket);
               console.log(
                 `VNC WebSocket server listening on ${this.config.host}:${this.config.vncPort}`
               );
@@ -224,11 +225,21 @@ export class AgentumServer {
       }
     });
 
+    this.sendCapabilities(socket);
+
     // Send initial session lists
     this.sendSessionList(clientId);
     this.sendClaudeSessionList(clientId);
     this.sendCodexSessionList(clientId);
     this.sendCopilotSessionList(clientId);
+  }
+
+  private sendCapabilities(socket: WebSocket): void {
+    if (socket.readyState !== WebSocket.OPEN) return;
+    socket.send(JSON.stringify({ type: 'server_capabilities', protocolVersion: 1,
+      features: { agents: ['claude', 'copilot', 'codex'], pty: true,
+        vnc: !!this.vncServer, vncSharedPort: false, vncPort: this.vncServer?.getPort(),
+        vncStreamControl: true, vncTextInput: true } }));
   }
 
   /**

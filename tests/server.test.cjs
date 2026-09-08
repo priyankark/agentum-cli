@@ -13,6 +13,7 @@ const { AgentumServer } = require('../dist/server');
 const { VNCServer } = require('../dist/vnc/vnc-server');
 const connect = async port => {
   const socket = new WebSocket(`ws://127.0.0.1:${port}`, { headers: { Authorization: 'Bearer ' + token } });
+  socket.received = []; socket.on('message', data => socket.received.push(JSON.parse(data)));
   await once(socket, 'open'); return socket;
 };
 const rejected = async port => {
@@ -28,6 +29,11 @@ test('actual terminal and VNC listeners reject anonymous clients and shut down w
     assert.equal(server.clients.size, 0); assert.equal(vnc.getClientCount(), 0);
     const client = await connect(server.wss.address().port);
     const vncClient = await connect(vnc.wss.address().port);
+    const capabilities = client.received.find(message => message.type === 'server_capabilities');
+    assert.equal(capabilities.protocolVersion, 1);
+    assert.equal(capabilities.features.vnc, false, 'disabled VNC must not be advertised');
+    assert.equal(capabilities.features.pty, true);
+    assert.deepEqual(capabilities.features.agents, ['claude', 'copilot', 'codex']);
     assert.equal(server.clients.size, 1); assert.equal(vnc.getClientCount(), 1);
     const invalid = once(client, 'message'); client.send('{broken');
     assert.equal(JSON.parse((await invalid)[0]).type, 'error');

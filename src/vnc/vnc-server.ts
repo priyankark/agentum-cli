@@ -331,7 +331,8 @@ export class VNCServer {
    * Get server port
    */
   public getPort(): number {
-    return this.port;
+    const address = this.wss?.address();
+    return address && typeof address !== 'string' ? address.port : this.port;
   }
 
   /**
