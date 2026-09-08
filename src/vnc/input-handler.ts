@@ -21,8 +21,8 @@ const KEY_MAP: Record<string, string> = {
   // Special keys
   'backspace': 'backspace',
   'delete': 'delete',
-  'enter': 'return',        // robotjs uses 'return' not 'enter' on macOS
-  'return': 'return',
+  'enter': 'enter',         // Native RobotJS key table uses 'enter'.
+  'return': 'enter',
   'tab': 'tab',
   'escape': 'escape',
   'esc': 'escape',
@@ -232,7 +232,12 @@ export function handleKeyboardEvent(event: VNCKeyboardEvent): void {
 
 
     if (normalizedModifiers.length > 0) {
-      robot!.keyTap(normalizedKey, normalizedModifiers as any);
+      try {
+        robot!.keyTap(normalizedKey, normalizedModifiers as any);
+      } finally {
+        // Clear modifier flags before subsequent Unicode typeString events on macOS.
+        for (const modifier of normalizedModifiers) robot!.keyToggle(modifier, 'up');
+      }
     } else {
       robot!.keyTap(normalizedKey);
     }
@@ -308,7 +313,7 @@ export function typeText(text: string, pressEnter: boolean = false): void {
   try {
     robot!.typeString(text);
     if (pressEnter) {
-      robot!.keyTap('return');
+      robot!.keyTap('enter');
     }
   } catch (error) {
     console.error('[VNC Input] Error typing text:', error);

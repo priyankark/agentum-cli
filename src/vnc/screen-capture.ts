@@ -3,7 +3,7 @@
  * Handles serialized frame capture and adaptive quality
  */
 
-import screenshot from 'screenshot-desktop';
+import { capturePrimaryScreen, nativeResizeJpeg } from './native-capture';
 import crypto from 'crypto';
 import { ResizeStrategy } from 'jimp';
 import { createImage } from './image-utils';
@@ -143,7 +143,7 @@ export class ScreenCaptureManager {
       this.inFlight = true;
       const started = performance.now();
       try {
-        const raw = await screenshot();
+        const raw = await capturePrimaryScreen();
         if (!active()) return;
         const hash = crypto.createHash('sha256').update(raw).digest('hex');
         // Periodic refresh allows a slow/new subscriber to recover on an idle desktop.
@@ -172,6 +172,9 @@ export class ScreenCaptureManager {
   }
 
   private async processFrame(frame: Buffer, dimensions: { width: number; height: number }): Promise<Buffer> {
+    const nativeFrame = await nativeResizeJpeg(frame, dimensions, this.quality.jpegQuality);
+    if (nativeFrame) return nativeFrame;
+
     const image = await createImage(frame);
 
     // Resize if needed

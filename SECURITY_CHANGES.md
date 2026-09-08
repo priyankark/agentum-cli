@@ -41,3 +41,5 @@ Open VNC to start streaming. Leaving VNC, backgrounding, or disconnecting stops 
 The security tests use Node's test runner and timer mocks; run them on Node 22 or newer. Older manually maintained Agentum test clients must send `{ headers: { Authorization: 'Bearer <token>' } }` in their `ws` constructor options. They cannot connect anonymously anymore.
 
 The cross-stack assessment is in [AirCodum’s cross-stack review](https://github.com/priyankark/AirCodum/blob/codex/security-vnc-hardening/SECURITY_REVIEW.md). Remaining mobile advisories do not apply to this CLI’s current dependency audit.
+
+Native Android-to-macOS validation, fixes discovered on device, measured capture results and remaining platform gaps are documented in [NATIVE_VALIDATION.md](NATIVE_VALIDATION.md).
