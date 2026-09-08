@@ -4,7 +4,9 @@
  */
 
 import { WebSocketServer, WebSocket } from 'ws';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID as uuidv4 } from 'crypto';
+import { getAuthToken } from '../auth';
+import { protectedBind, authorized, messageBudget, validKey, validMouse } from '../security';
 import { ScreenCaptureManager } from './screen-capture';
 import { handleMouseEvent, handleKeyboardEvent, getScreenSize, typeString } from './input-handler';
 import type {
@@ -24,6 +26,7 @@ const DEFAULT_VNC_PORT = 11043;
 class VNCConnection {
   private unsubscribe: (() => void) | null = null;
   private isStreaming = false;
+  private heldMouse: VNCMouseEvent | null = null;
 
   constructor(
     private ws: WebSocket,
@@ -37,7 +40,9 @@ class VNCConnection {
    * Set up WebSocket event handlers
    */
   private setupWebSocketHandlers(): void {
+    const budget = messageBudget();
     this.ws.on('message', async (message: Buffer | string) => {
+      if (!budget(Buffer.byteLength(message))) { this.ws.close(1008, 'Message limit exceeded'); return; }
       await this.handleMessage(message);
     });
 
@@ -69,16 +74,21 @@ class VNCConnection {
           break;
 
         case 'vnc_mouse_event':
+          if (!validMouse(message)) throw new Error('Invalid mouse event');
           handleMouseEvent(message as VNCMouseEvent);
+          if (message.eventType === 'down') this.heldMouse = message;
+          if (message.eventType === 'up') this.heldMouse = null;
           break;
 
         case 'vnc_keyboard_event':
+          if (!validKey(message)) throw new Error('Invalid key event');
           handleKeyboardEvent(message as VNCKeyboardEvent);
           break;
 
         case 'vnc_type':
           // Type text string
           const typeMsg = message as { text: string };
+          if (typeof typeMsg.text !== 'string' || typeMsg.text.length > 4096) throw new Error('Invalid text');
           if (typeMsg.text) {
             typeString(typeMsg.text);
           }
@@ -126,6 +136,8 @@ class VNCConnection {
    * Stop streaming frames to this client
    */
   private stopStreaming(): void {
+    if (this.heldMouse) handleMouseEvent({ ...this.heldMouse, eventType: 'up' });
+    this.heldMouse = null;
     if (!this.isStreaming) return;
 
     console.log(`[VNC] Client ${this.clientId} stopped streaming`);
@@ -147,7 +159,7 @@ class VNCConnection {
    * Send a frame to the client
    */
   private sendFrame(frame: Buffer, dimensions: ScreenDimensions): void {
-    if (!this.isStreaming || this.ws.readyState !== WebSocket.OPEN) return;
+    if (!this.isStreaming || this.ws.readyState !== WebSocket.OPEN || this.ws.bufferedAmount > 0) return;
 
     // Convert to base64 for transmission
     const base64Image = frame.toString('base64');
@@ -211,7 +223,7 @@ export class VNCServer {
   private port: number;
   private host: string;
 
-  constructor(port: number = DEFAULT_VNC_PORT, host: string = '0.0.0.0') {
+  constructor(port: number = DEFAULT_VNC_PORT, host: string = '127.0.0.1') {
     this.port = port;
     this.host = host;
   }
@@ -222,18 +234,20 @@ export class VNCServer {
   public start(): Promise<void> {
     return new Promise((resolve, reject) => {
       try {
+        if (!protectedBind(this.host)) throw new Error("Use localhost behind a TLS proxy, or bind to your Tailscale interface IP.");
+        const token = getAuthToken();
         this.wss = new WebSocketServer({
           port: this.port,
           host: this.host,
+          maxPayload: 64 * 1024, perMessageDeflate: false,
+          verifyClient: ({ req }: { req: import('http').IncomingMessage }) => (this.wss?.clients.size ?? 0) < 4 && authorized(req, token),
         });
 
         this.wss.on('connection', this.handleConnection.bind(this));
 
         this.wss.on('error', (error: Error) => {
           console.error('[VNC] Server error:', error);
-          if (!this.wss) {
-            reject(error);
-          }
+          reject(error);
         });
 
         this.wss.on('listening', () => {
@@ -341,6 +355,7 @@ export class VNCServer {
 
     // Close WebSocket server
     if (this.wss) {
+      for (const socket of this.wss.clients) socket.terminate();
       await new Promise<void>((resolve) => {
         this.wss!.close(() => {
           resolve();
@@ -358,7 +373,7 @@ export class VNCServer {
  */
 export async function createVNCServer(
   port: number = DEFAULT_VNC_PORT,
-  host: string = '0.0.0.0'
+  host: string = '127.0.0.1'
 ): Promise<VNCServer> {
   const server = new VNCServer(port, host);
   await server.start();

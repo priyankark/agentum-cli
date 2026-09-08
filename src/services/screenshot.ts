@@ -2,7 +2,7 @@
  * Platform-agnostic screenshot service
  */
 
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -26,7 +26,8 @@ export async function captureScreenshot(options?: ScreenshotOptions): Promise<Sc
   const format = options?.format || 'jpg';
   const timestamp = new Date().toISOString().replace(/[-:T]/g, '').replace(/\..+/, '');
   const filename = options?.filename || `screenshot_${timestamp}.${format}`;
-  const filePath = path.join(outputDir, filename);
+  if (path.basename(filename) !== filename || !['jpg', 'png'].includes(format)) throw new Error('Invalid screenshot filename or format');
+  const filePath = path.resolve(outputDir, filename);
 
   // Ensure output directory exists
   try {
@@ -37,13 +38,13 @@ export async function captureScreenshot(options?: ScreenshotOptions): Promise<Sc
 
   if (platform === 'darwin') {
     // macOS: use screencapture (no permission prompts after initial grant)
-    execSync(`screencapture -x -t ${format} "${filePath}"`, { stdio: 'ignore' });
+    execFileSync('screencapture', ['-x', '-t', format, filePath], { stdio: 'ignore' });
   } else if (platform === 'linux') {
     // Linux: try scrot first, fall back to import (ImageMagick)
     try {
-      execSync(`scrot "${filePath}"`, { stdio: 'ignore' });
+      execFileSync('scrot', [filePath], { stdio: 'ignore' });
     } catch {
-      execSync(`import -window root "${filePath}"`, { stdio: 'ignore' });
+      execFileSync('import', ['-window', 'root', filePath], { stdio: 'ignore' });
     }
   } else if (platform === 'win32') {
     // Windows: use screenshot-desktop package

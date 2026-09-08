@@ -13,7 +13,8 @@
     "clean": "rm -rf dist",
     "test": "./tests/run-all-tests.sh",
     "prepublishOnly": "npm run build",
-    "postinstall": "chmod +x node_modules/node-pty/prebuilds/darwin-*/spawn-helper 2>/dev/null || true"
+    "postinstall": "chmod +x node_modules/node-pty/prebuilds/darwin-*/spawn-helper 2>/dev/null || true",
+    "test:security": "npm run build && node --test tests/*.test.cjs"
   },
   "keywords": [
     "vibe-coding",
@@ -44,13 +45,11 @@
     "jimp": "^1.6.0",
     "node-pty": "^1.0.0",
     "screenshot-desktop": "^1.15.2",
-    "uuid": "^9.0.1",
     "ws": "^8.16.0"
   },
   "devDependencies": {
     "@types/node": "^20.10.6",
     "@types/screenshot-desktop": "^1.15.0",
-    "@types/uuid": "^9.0.7",
     "@types/ws": "^8.5.10",
     "ts-node": "^10.9.2",
     "typescript": "^5.3.3"

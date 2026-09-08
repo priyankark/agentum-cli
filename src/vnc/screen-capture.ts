@@ -1,6 +1,6 @@
 /**
  * Screen capture manager for VNC functionality
- * Handles frame capture, coalescing, and adaptive quality
+ * Handles serialized frame capture and adaptive quality
  */
 
 import screenshot from 'screenshot-desktop';
@@ -13,7 +13,7 @@ import type { VNCQualitySettings, ScreenDimensions, FrameCallback } from './type
 /**
  * Singleton class that manages screen capture for all connected VNC clients
  * Features:
- * - Frame coalescing (batch multiple frames, send latest)
+ * - Immediate encoding, with one capture in flight
  * - Adaptive quality (FPS, JPEG quality, resolution)
  * - Frame hash comparison to skip unchanged frames
  * - Performance monitoring and auto-adjustment
@@ -27,19 +27,14 @@ export class ScreenCaptureManager {
   private quality: VNCQualitySettings = {
     width: 1440,
     jpegQuality: 85,
-    fps: 45,
+    fps: 30,
   };
 
   // Frame management
-  private processingFrame = false;
   private lastFrameHash: string | null = null;
-  private lastFrameSentTime = 0;
   private lastFrameSize = 0;
 
-  // Frame coalescing
-  private pendingFrames: Buffer[] = [];
-  private coalesceTimer: NodeJS.Timeout | null = null;
-  private readonly COALESCE_MAX_WAIT = 100; // ms
+  // Capture cadence
   private readonly MIN_FRAME_INTERVAL = 33;  // ~30fps cap
 
   // Performance tracking
@@ -49,7 +44,7 @@ export class ScreenCaptureManager {
   private framesSent = 0;
 
   // Quality control bounds
-  private readonly MIN_QUALITY = 80;
+  private readonly MIN_QUALITY = 55;
   private readonly MAX_QUALITY = 90;
   private readonly MIN_WIDTH = 1024;
   private readonly MAX_WIDTH = 1920;
@@ -109,6 +104,7 @@ export class ScreenCaptureManager {
    */
   public subscribe(callback: FrameCallback): () => void {
     this.subscribers.push(callback);
+    this.lastFrameHash = null;
 
     if (!this.isCapturing) {
       this.startCaptureLoop();
@@ -132,144 +128,62 @@ export class ScreenCaptureManager {
   /**
    * Start the capture loop
    */
-  private startCaptureLoop(): void {
+  private generation = 0;
+  private inFlight = false;
+  private lastRefresh = 0;
+
+  private startCaptureLoop() {
     if (this.isCapturing) return;
     this.isCapturing = true;
-    console.log('[VNC] Starting screen capture loop');
-
-    const captureFrame = async (): Promise<void> => {
-      if (!this.isCapturing) return;
-
-      const now = performance.now();
-      const timeSinceLastFrame = now - this.lastFrameSentTime;
-
-      // Skip frame if we're processing or it's too soon
-      if (this.processingFrame || timeSinceLastFrame < this.MIN_FRAME_INTERVAL) {
-        this.droppedFrames++;
-        // Schedule next capture
-        const nextInterval = Math.max(
-          this.MIN_FRAME_INTERVAL,
-          1000 / this.quality.fps
-        );
-        setTimeout(captureFrame, nextInterval);
-        return;
-      }
-
+    const generation = ++this.generation;
+    const active = () => this.isCapturing && generation === this.generation;
+    const captureFrame = async () => {
+      if (!active()) return;
+      if (this.inFlight) { this.captureInterval = setTimeout(captureFrame, 16); return; }
+      this.inFlight = true;
+      const started = performance.now();
       try {
         const raw = await screenshot();
-        await this.handleNewFrame(raw);
-      } catch (error) {
-        console.error('[VNC] Capture error:', error);
+        if (!active()) return;
+        const hash = crypto.createHash('sha256').update(raw).digest('hex');
+        // Periodic refresh allows a slow/new subscriber to recover on an idle desktop.
+        if (hash !== this.lastFrameHash || Date.now() - this.lastRefresh >= 1000) {
+          const dimensions = { ...this.cachedDimensions };
+          const frame = await this.processFrame(raw, dimensions);
+          if (!active()) return;
+          this.lastFrameHash = hash;
+          this.lastRefresh = Date.now();
+          this.lastFrameSize = frame.length;
+          this.framesSent++;
+          this.updatePerformanceMetrics(performance.now() - started);
+          for (const subscriber of this.subscribers) {
+            try { subscriber(frame, dimensions); } catch { /* A closed client cannot stop capture. */ }
+          }
+          this.adjustQualityIfNeeded();
+        }
+      } catch { console.error('Screen capture failed; retrying.'); }
+      finally {
+        this.inFlight = false;
+        if (active()) this.captureInterval = setTimeout(captureFrame,
+          Math.max(1, 1000 / this.quality.fps - (performance.now() - started)));
       }
-
-      // Schedule next capture with dynamic interval
-      const nextInterval = Math.max(
-        this.MIN_FRAME_INTERVAL,
-        1000 / this.quality.fps
-      );
-      setTimeout(captureFrame, nextInterval);
     };
-
-    captureFrame();
+    void captureFrame();
   }
 
-  /**
-   * Calculate frame hash for duplicate detection
-   * Uses sampling for efficiency
-   */
-  private calculateFrameHash(buffer: Buffer): string {
-    // Sample 32 points across the frame for quick comparison
-    const samples = new Uint8Array(32);
-    const step = Math.floor(buffer.length / 32);
-    const offset = Math.floor(step / 2);
-
-    for (let i = 0; i < 32; i++) {
-      samples[i] = buffer[offset + i * step];
-    }
-
-    return crypto.createHash('md5').update(samples).digest('hex');
-  }
-
-  /**
-   * Handle a newly captured frame
-   */
-  private async handleNewFrame(frame: Buffer): Promise<void> {
-    const frameHash = this.calculateFrameHash(frame);
-
-    // Skip if frame hasn't changed
-    if (frameHash === this.lastFrameHash) {
-      this.droppedFrames++;
-      return;
-    }
-
-    this.lastFrameHash = frameHash;
-    this.pendingFrames.push(frame);
-
-    // Start coalescing timer if not already running
-    if (!this.coalesceTimer) {
-      this.coalesceTimer = setTimeout(() => {
-        this.processCoalescedFrames();
-      }, this.COALESCE_MAX_WAIT);
-    }
-  }
-
-  /**
-   * Process coalesced frames - send only the latest
-   */
-  private async processCoalescedFrames(): Promise<void> {
-    if (this.pendingFrames.length === 0 || this.processingFrame) return;
-
-    this.processingFrame = true;
-    this.coalesceTimer = null;
-
-    // Process most recent frame only
-    const frame = this.pendingFrames[this.pendingFrames.length - 1];
-    this.pendingFrames = [];
-
-    try {
-      const startTime = performance.now();
-      const processedFrame = await this.processFrame(frame);
-      const processingTime = performance.now() - startTime;
-
-      this.updatePerformanceMetrics(processingTime);
-      this.adjustQualityIfNeeded();
-
-      this.framesSent++;
-      this.lastFrameSentTime = performance.now();
-      this.lastFrameSize = processedFrame.length;
-
-      // Notify all subscribers
-      this.subscribers.forEach((cb) => cb(processedFrame, this.cachedDimensions));
-    } catch (error) {
-      console.error('[VNC] Frame processing error:', error);
-    } finally {
-      this.processingFrame = false;
-
-      // Process any frames that arrived during processing
-      if (this.pendingFrames.length > 0) {
-        this.coalesceTimer = setTimeout(() => {
-          this.processCoalescedFrames();
-        }, Math.min(this.COALESCE_MAX_WAIT, this.MIN_FRAME_INTERVAL));
-      }
-    }
-  }
-
-  /**
-   * Process a single frame: resize and encode as JPEG
-   */
-  private async processFrame(frame: Buffer): Promise<Buffer> {
+  private async processFrame(frame: Buffer, dimensions: { width: number; height: number }): Promise<Buffer> {
     const image = await createImage(frame);
 
     // Resize if needed
-    if (image.width !== this.cachedDimensions.width ||
-        image.height !== this.cachedDimensions.height) {
+    if (image.width !== dimensions.width ||
+        image.height !== dimensions.height) {
       const resizeMode = this.isProcessingSlow()
         ? ResizeStrategy.NEAREST_NEIGHBOR  // Faster but lower quality
         : ResizeStrategy.BILINEAR;         // Better quality
 
       image.resize({
-        w: this.cachedDimensions.width,
-        h: this.cachedDimensions.height,
+        w: dimensions.width,
+        h: dimensions.height,
         mode: resizeMode,
       });
     }
@@ -365,7 +279,7 @@ export class ScreenCaptureManager {
    * Calculate scaled dimensions maintaining aspect ratio
    */
   private getScaledDimensions(): ScreenDimensions {
-    const { width } = this.quality;
+    const width = Math.min(this.quality.width, this.screenSize.width);
     const { width: realWidth, height: realHeight } = this.screenSize;
     const height = Math.floor(width * (realHeight / realWidth));
     return { width, height };
@@ -403,6 +317,7 @@ export class ScreenCaptureManager {
     }
 
     if (changed) {
+        this.lastFrameHash = null;
       this.resetPerformanceMetrics();
     }
   }
@@ -421,19 +336,15 @@ export class ScreenCaptureManager {
    * Stop the capture loop
    */
   private stopCaptureLoop(): void {
+    this.generation++;
     console.log('[VNC] Stopping screen capture loop');
 
     if (this.captureInterval) {
-      clearInterval(this.captureInterval);
+      clearTimeout(this.captureInterval);
       this.captureInterval = null;
-    }
-    if (this.coalesceTimer) {
-      clearTimeout(this.coalesceTimer);
-      this.coalesceTimer = null;
     }
     this.isCapturing = false;
     this.lastFrameHash = null;
-    this.pendingFrames = [];
     this.resetPerformanceMetrics();
   }
 
