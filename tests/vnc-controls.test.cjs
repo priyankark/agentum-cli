@@ -84,7 +84,8 @@ test('VNC heartbeat independently disconnects a silent client and releases its d
     await start(socket); await barrier(socket, [{ ...pointer, eventType: 'down' }]);
     assert.deepEqual(events.at(-1), ['button', 'down', 'left']);
     const ping = once(socket, 'ping'); t.mock.timers.tick(15000); await ping;
-    const closed = once(socket, 'close'); t.mock.timers.tick(15000); await closed;
+    const closed = once(socket, 'close'), remoteClosed = once([...server.wss.clients][0], 'close');
+    t.mock.timers.tick(15000); await Promise.all([closed, remoteClosed]);
     assert.deepEqual(events.at(-1), ['button', 'up', 'left']);
     assert.equal(server.getClientCount(), 0);
   } finally { await server.shutdown(); }
