@@ -15,7 +15,9 @@
     "prepublishOnly": "npm run build",
     "postinstall": "node scripts/postinstall.cjs",
     "test:security": "npm test",
-    "test:legacy": "./tests/run-all-tests.sh"
+    "test:legacy": "./tests/run-all-tests.sh",
+    "test:platform": "npm run build && node --test tests/platform.test.cjs",
+    "test:package": "node scripts/verify-package-install.cjs"
   },
   "keywords": [
     "vibe-coding",
