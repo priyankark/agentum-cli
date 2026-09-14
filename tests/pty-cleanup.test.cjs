@@ -13,6 +13,12 @@ test('exited Windows PTY cleanup releases worker and pipe without killing a reus
   releaseExitedPty(terminal, 'darwin'); assert.deepEqual(calls, []);
   releaseExitedPty(terminal, 'win32'); assert.deepEqual(calls, ['worker', 'pipe']);
   assert.doesNotThrow(() => releaseExitedPty({}, 'win32'), 'other node-pty implementations need no adapter');
+  calls.length = 0;
+  terminal._agent._conoutSocketWorker.dispose = () => { throw Error('Already closed'); };
+  assert.doesNotThrow(() => releaseExitedPty(terminal, 'win32'));
+  assert.deepEqual(calls, ['pipe'], 'a failed worker disposal cannot retain the input pipe');
+  terminal._agent.inSocket.destroy = () => { throw Error('Already closed'); };
+  assert.doesNotThrow(() => releaseExitedPty(terminal, 'win32'), 'cleanup failures cannot suppress onExit delivery');
 });
 
 test('a naturally completed Windows terminal allows the owning Node process to exit', { skip: process.platform !== 'win32', timeout: 25000 }, () => {

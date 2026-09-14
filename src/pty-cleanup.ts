@@ -11,6 +11,8 @@ export function releaseExitedPty(terminal: IPty, platform: NodeJS.Platform = pro
     inSocket?: { destroy(): void };
     _conoutSocketWorker?: { dispose(): void };
   } })._agent;
-  agent?._conoutSocketWorker?.dispose();
-  agent?.inSocket?.destroy();
+  // Cleanup must not suppress session completion or prevent the other resource
+  // from being released if one operation fails during concurrent shutdown.
+  try { agent?._conoutSocketWorker?.dispose(); } catch {}
+  try { agent?.inSocket?.destroy(); } catch {}
 }
