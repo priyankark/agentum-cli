@@ -21,5 +21,11 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci --no-audit --no-fund
+      - name: Verify Windows listener and PTY lifecycle
+        if: runner.os == 'Windows'
+        timeout-minutes: 2
+        run: |
+          npm run build
+          node tests/server.test.cjs
       - run: npm test
       - run: npm run test:package

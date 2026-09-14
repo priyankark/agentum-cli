@@ -1,6 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { once } = require('node:events');
+const { once: eventOnce } = require('node:events');
+const once = (emitter, event) => eventOnce(emitter, event, { signal: AbortSignal.timeout(5000) });
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -18,7 +19,7 @@ const connect = async port => {
 };
 const rejected = async port => {
   const socket = new WebSocket(`ws://127.0.0.1:${port}`);
-  await new Promise(resolve => socket.on('error', resolve));
+  await once(socket, 'error');
 };
 test('actual terminal and VNC listeners reject anonymous clients and shut down with clients connected', async () => {
   const server = new AgentumServer({ port: 0, enableVnc: false });
