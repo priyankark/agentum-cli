@@ -12,6 +12,18 @@ const destination = process.argv[2] || path.join(os.tmpdir(), `agentum-device-${
 const host = process.env.AGENTUM_TEST_HOST || connectionAddresses('0.0.0.0')[0];
 if (!host) throw new Error('Set AGENTUM_TEST_HOST to a reachable Wi-Fi/Tailscale address');
 const servers = [];
+// A private shim adds official Cline isolation flags without changing HOME or user configuration.
+if (process.env.AGENTUM_TEST_CLINE_BINARY) {
+  const fixtureDir = path.dirname(destination);
+  const bin = path.join(fixtureDir, 'bin'); fs.mkdirSync(bin, { recursive: true, mode: 0o700 });
+  const wrapper = path.join(bin, 'cline');
+  const real = process.env.AGENTUM_TEST_CLINE_BINARY;
+  const args = ['--config', path.join(fixtureDir, 'cline-config'), '--data-dir', path.join(fixtureDir, 'cline-data')];
+  fs.writeFileSync(wrapper, '#!/usr/bin/env node\n' +
+    `const child = require('node:child_process').spawn(${JSON.stringify(real)}, ${JSON.stringify(args)}.concat(process.argv.slice(2)), {stdio:'inherit'});\n` +
+    `child.on('exit', code => process.exit(code ?? 1)); child.on('error', () => process.exit(1));\n`, { mode: 0o700 });
+  process.env.PATH = bin + path.delimiter + process.env.PATH;
+}
 const configs = [[11142, 'Agentum test Work'], [11144, 'Agentum test Personal']];
 const directory = path.dirname(destination);
 const requestFile = path.join(directory, 'request.json');
@@ -31,6 +43,17 @@ for (const name of ['handleMouseEvent', 'handleScrollEvent', 'handleKeyboardEven
 async function launch(index) {
   const [port, name] = configs[index];
   const server = await createServer({ port, vncPort: port + 1, host: '0.0.0.0', instanceName: name });
+  server.wss.on('connection', socket => {
+    socket.on('message', raw => {
+      try {
+        const message = JSON.parse(raw.toString());
+        const keys = { '\x1b[A': 'up', '\x1b[B': 'down', '\t': 'tab', '\x1b': 'escape', '\x03': 'interrupt', '\r': 'enter' };
+        if (message.type === 'input' && Object.hasOwn(keys, message.data)) {
+          events.push({ index, native: 'terminalInput', time: Date.now(), args: [{ key: keys[message.data], sessionId: message.sessionId }] });
+        }
+      } catch { /* Observe only bounded special-key packets, never terminal text. */ }
+    });
+  });
   server.vncServer.wss.on('connection', socket => {
     socket.prependListener('message', () => { activeIndex = index; });
   });
