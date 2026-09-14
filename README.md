@@ -3,7 +3,7 @@
 > This release requires the updated Agentum mobile app and one-time pairing. Older anonymous apps cannot connect. See [connection setup](SECURITY_CHANGES.md).
 
 
-Control AI coding agents from your phone. Mirror Claude Code, GitHub Copilot, and OpenAI Codex to mobile - code from your couch, bed, or anywhere.
+Control AI coding agents from your phone. Mirror Claude Code, GitHub Copilot, OpenAI Codex and Cline to mobile.
 
 ## How It Works
 
@@ -31,6 +31,7 @@ You need [Node.js](https://nodejs.org/) (v18+) installed. Then, install and auth
 | Claude Code | `npm install -g @anthropic-ai/claude-code` | `claude` (follow prompts) |
 | GitHub Copilot | `gh extension install github/gh-copilot` | `gh auth login` |
 | OpenAI Codex | `npm install -g @openai/codex` | `codex` (follow prompts) |
+| Cline | `npm install -g cline` | `cline auth` |
 
 Only install and authenticate the agents you plan to use.
 
@@ -82,6 +83,18 @@ ag pair --port 12042
 Desktop ports default to the terminal port plus one. Each terminal port has a persistent identity, so the app can detect an address that now points to a different instance. Terminal/agent sessions belong to their instance. **Desktop mode controls the same foreground desktop on that computer**; separate instances are not separate virtual desktops.
 
 Desktop supports pinch zoom and pan in the updated app, wheel scrolling, right-click, explicit drag, and text/shortcut input. Native Screen Recording and Accessibility permissions are required on macOS.
+
+### Cline sessions
+
+After installing and authenticating Cline, restart `ag` from the same terminal so Cline is on its PATH. In the updated app, choose **Cline → New**, name the session, and optionally enter an absolute project folder on this computer. Leaving it empty uses the directory where `ag` started.
+
+The preset launches the official interactive CLI with `cline --tui --auto-approve false`. Use the phone’s terminal key row for arrows, Enter, Tab, Esc and Ctrl+C; swipe horizontally to see additional keys. Tool approval prompts remain enabled. An unavailable installation produces setup guidance in the app.
+
+Each new session starts a separate conversation. Running PTYs stay alive when a phone disconnects, and reattaching replays their terminal output. Stopping the server ends its PTYs; use Cline’s own history/resume commands from a manual terminal if you need an older conversation. Older Agentum servers can run `cline` manually in PTY mode, while the dedicated preset requires Agentum 2 and the updated app.
+
+### Windows and WSL
+
+Run Agentum in Windows PowerShell on the machine that owns the desktop. WSL/WSLg cannot capture the Windows host desktop; Agentum detects this and keeps terminal sessions available with explicit guidance. For WSL commands, create a terminal session running `wsl.exe` from the Windows-hosted server.
 
 ---
 
