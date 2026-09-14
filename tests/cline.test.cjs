@@ -10,23 +10,28 @@ const waitFor = async predicate => {
   const until = Date.now() + 8000;
   while (!predicate()) { if (Date.now() > until) throw Error('Timed out waiting for PTY output'); await new Promise(r => setTimeout(r, 20)); }
 };
-function fixture(t) {
+function fixture(t, stop = () => {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentum-cline-'));
   const project = path.join(dir, 'project with spaces; literal'); fs.mkdirSync(project);
-  fs.writeFileSync(path.join(dir, 'cline'), `#!${process.execPath}\nprocess.stdout.write('READY '+JSON.stringify({args:process.argv.slice(2),cwd:process.cwd()})+'\\n'); process.stdin.on('data', d => process.stdout.write('REPLY '+d));`, { mode: 0o700 });
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const script = `process.stdout.write('READY '+JSON.stringify({args:process.argv.slice(2),cwd:process.cwd()})+'\\n'); process.stdin.on('data', d => process.stdout.write('REPLY '+d));`;
+  if (process.platform === 'win32') {
+    const entry = path.join(dir, 'node_modules', 'cline', 'bin', 'cline');
+    fs.mkdirSync(path.dirname(entry), { recursive: true }); fs.writeFileSync(entry, script);
+    fs.writeFileSync(path.join(dir, 'cline.cmd'), '@echo off\r\n');
+  } else fs.writeFileSync(path.join(dir, 'cline'), `#!${process.execPath}\n${script}`, { mode: 0o700 });
+  t.after(async () => { await stop(); await new Promise(resolve => setTimeout(resolve, 200)); fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); });
   return { dir, project };
 }
 test('Cline preset uses fixed arguments, literal project paths and retained isolated PTYs', { timeout: 12000 }, async t => {
-  const { dir, project } = fixture(t);
+  let manager;
+  const { dir, project } = fixture(t, () => manager?.shutdown());
   const output = new Map();
-  const manager = new SessionManager({ onOutput(id, data) { output.set(id, (output.get(id) || '') + data); }, onExit() {} });
-  t.after(() => manager.shutdown());
-  const make = name => manager.createSession({ name, command: 'touch should-not-execute', preset: 'cline', cwd: project, env: { PATH: dir } });
+  manager = new SessionManager({ onOutput(id, data) { output.set(id, (output.get(id) || '') + data); }, onExit() {} });
+  const make = name => manager.createSession({ name, command: 'touch should-not-execute', preset: 'cline', cwd: project, cols: 500, env: { PATH: dir } });
   const a = make('A'), b = make('B');
   await waitFor(() => output.get(a.id)?.includes('READY') && output.get(b.id)?.includes('READY'));
   assert.match(output.get(a.id), /"args":\["--tui","--auto-approve","false"\]/);
-  assert.ok(output.get(a.id).includes(project)); assert.equal(fs.existsSync(path.join(project, 'should-not-execute')), false);
+  assert.ok(output.get(a.id).includes(JSON.stringify(project).slice(1, -1))); assert.equal(fs.existsSync(path.join(project, 'should-not-execute')), false);
   assert.equal(manager.getSessionInfoList()[0].preset, 'cline');
   manager.addClientToSession(a.id, 'phone'); manager.removeClientFromAllSessions('phone');
   assert.equal(manager.getSession(a.id).state, 'running', 'disconnect keeps Cline alive');
@@ -47,16 +52,17 @@ test('missing CLI, unknown presets and invalid project folders produce useful er
   assert.equal(manager.getAllSessions().length, 0);
 });
 test('actual authenticated socket creates Cline metadata and resumes output after phone reconnect', { timeout: 12000 }, async t => {
-  const { dir } = fixture(t); const oldPath = process.env.PATH, oldToken = process.env.AGENTUM_AUTH_TOKEN;
+  let server;
+  const { dir } = fixture(t, () => server?.shutdown()); const oldPath = process.env.PATH, oldToken = process.env.AGENTUM_AUTH_TOKEN;
   process.env.PATH = dir; process.env.AGENTUM_AUTH_TOKEN = 'c'.repeat(64);
   t.after(() => { process.env.PATH = oldPath; if (oldToken === undefined) delete process.env.AGENTUM_AUTH_TOKEN; else process.env.AGENTUM_AUTH_TOKEN = oldToken; });
   const { AgentumServer } = require('../dist/server');
-  const server = new AgentumServer({ port: 0, host: '127.0.0.1', enableVnc: false });
-  await server.start(); t.after(() => server.shutdown());
+  server = new AgentumServer({ port: 0, host: '127.0.0.1', enableVnc: false });
+  await server.start();
   const connect = async () => { const ws = new WebSocket(`ws://127.0.0.1:${server.getConnectionDetails().port}`, { headers: { Authorization: 'Bearer ' + process.env.AGENTUM_AUTH_TOKEN } }); ws.messages = []; ws.on('message', data => ws.messages.push(JSON.parse(data))); await once(ws, 'open'); return ws; };
   const one = await connect();
   assert.equal(one.messages[0].features.clinePty, true);
-  one.send(JSON.stringify({ type: 'create_session', preset: 'cline', name: 'Cline project', cwd: dir }));
+  one.send(JSON.stringify({ type: 'create_session', preset: 'cline', name: 'Cline project', cwd: dir, cols: 500 }));
   await waitFor(() => one.messages.some(m => m.type === 'output' && m.data.includes('READY')));
   const id = one.messages.find(m => m.type === 'session_created').sessionId;
   assert.equal(one.messages.find(m => m.type === 'session_created').preset, 'cline');

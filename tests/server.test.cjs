@@ -86,7 +86,8 @@ test('occupied terminal or VNC ports reject startup promptly', { timeout: 5000 }
   } finally { await one.shutdown(); await two.shutdown(); await vnc.shutdown(); }
 });
 
-test('authenticated terminal session executes quoted input and reports its output and exit', { timeout: 5000 }, async () => {
+test('authenticated terminal session executes quoted input and reports its output and exit', { timeout: 10000 }, async () => {
+  const scriptDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentum-quoted-command-'));
   const server = new AgentumServer({ port: 0, host: '127.0.0.1', enableVnc: false });
   await server.start();
   try {
@@ -96,13 +97,18 @@ test('authenticated terminal session executes quoted input and reports its outpu
       if (message.type === 'error') reject(new Error(message.error));
       if (message.type === 'command_complete') resolve(message);
     }));
-    client.send(JSON.stringify({ type: 'create_session', name: 'Socket regression', command: 'printf "agentum quoted output\\n"', cols: 80, rows: 24 }));
-    await ended;
+    const script = path.join(scriptDir, 'quoted terminal script.cjs');
+    fs.writeFileSync(script, 'process.stdout.write("agentum quoted output\\n");');
+    const quote = value => process.platform === 'win32' ? "'" + value.replace(/'/g, "''") + "'" : "'" + value.replace(/'/g, "'\\''") + "'";
+    const command = (process.platform === 'win32' ? '& ' : '') + quote(process.execPath) + ' ' + quote(script);
+    client.send(JSON.stringify({ type: 'create_session', name: 'Socket regression', command, cols: 80, rows: 24 }));
+    const completion = await ended;
+    assert.equal(completion.exitCode, 0);
     const created = client.received.find(message => message.type === 'session_created');
     assert.ok(created?.sessionId);
     const output = client.received.filter(message => message.type === 'output').map(message => message.data).join('');
     assert.match(output, /agentum quoted output/);
-  } finally { await server.shutdown(); }
+  } finally { await server.shutdown(); fs.rmSync(scriptDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); }
 });
 
 test('terminal hello waits for desktop startup and reports final availability before sessions', { timeout: 5000 }, async () => {
