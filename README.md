@@ -42,13 +42,15 @@ Only install and authenticate the agents you plan to use.
 ### 1. Install CLI on your desktop
 
 ```bash
-npm install -g agentum
+npm install -g https://github.com/priyankark/agentum-cli/releases/download/v2.0.0/agentum-2.0.0.tgz
 ```
+
+The GitHub release includes the built package. Agentum 2 requires AirCodum Agentum 1.1 or later. npm registry publication is pending publisher authentication; the unversioned npm package still installs the older server. Once version 2 is available on npm, `npm install -g agentum@2` is equivalent.
 
 ### 2. Start the server
 
 ```bash
-npx agentum start
+ag start
 ```
 
 The server shows your computer name, terminal/desktop ports, and available Wi-Fi or Tailscale addresses. The default terminal port is **11042**, and desktop sharing uses **11043**.

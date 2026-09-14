@@ -15,6 +15,7 @@ The first message on **both** terminal and desktop sockets is:
   "features": {
     "agents": ["claude", "copilot", "codex"],
     "pty": true,
+    "clinePty": true,
     "vnc": true,
     "vncSharedPort": false,
     "vncPort": 11043,
@@ -46,3 +47,5 @@ Run `npm test` on Node 22+ for authentication, real socket identity/port/reconne
 ## Desktop platform scope
 
 Screen capture and input drivers have implementations for macOS, Windows and Linux. Scroll conversion has automated platform contract coverage. Native validation recorded so far is macOS desktop only; Windows/Linux native permissions, capture backends and wheel behavior must be validated on those systems before claiming equivalent tested support. On Linux, capture/input depends on the available desktop/display backend; a Wayland-only environment may require backend-specific support.
+
+Cline uses the existing authenticated PTY protocol with `preset: "cline"`. The `clinePty` marker identifies preset support, not whether the optional official CLI is installed. Sessions advertise their preset and project folder. WSL reports `vnc: false` with `desktopUnavailableReason`; terminal sessions remain connected.
