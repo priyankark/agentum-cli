@@ -4,7 +4,7 @@
  */
 
 import { spawn, ChildProcess } from 'child_process';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID as uuidv4 } from 'crypto';
 import * as readline from 'readline';
 
 // Claude streaming JSON message types
@@ -188,8 +188,9 @@ export class ClaudeSessionManager {
       '-p', prompt,
       '--output-format', 'stream-json',
       '--verbose',  // Required for stream-json
-      '--dangerously-skip-permissions',  // Bypass permission prompts for headless mode
     ];
+
+    if (process.env.AGENTUM_ALLOW_UNSANDBOXED === '1') args.push('--dangerously-skip-permissions');
 
     // Resume existing Claude session if available
     if (session.claudeSessionId) {
@@ -217,7 +218,6 @@ export class ClaudeSessionManager {
   private executeClaudeCommand(session: ClaudeSession, args: string[]): Promise<void> {
     return new Promise((resolve, reject) => {
       console.log(`[CLAUDE] Spawning: ${this.claudeBinaryPath}`);
-      console.log(`[CLAUDE] Args: ${JSON.stringify(args)}`);
 
       const proc = spawn(this.claudeBinaryPath, args, {
         cwd: session.workingDirectory,
@@ -253,7 +253,6 @@ export class ClaudeSessionManager {
           });
         } catch (e) {
           // Not JSON, might be raw output - log it
-          console.log(`[CLAUDE] Raw output: ${line}`);
         }
       });
 

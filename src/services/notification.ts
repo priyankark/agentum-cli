@@ -3,6 +3,7 @@
  */
 
 import { WebSocket } from 'ws';
+import { authHeaders } from '../auth';
 import { MessageType } from '../types';
 
 export interface NotificationOptions {
@@ -27,7 +28,7 @@ export async function sendNotification(
   const host = target?.host || '127.0.0.1';
   const port = target?.port || 11042;
 
-  const ws = new WebSocket(`ws://${host}:${port}`);
+  const ws = new WebSocket(`ws://${host}:${port}`, { headers: authHeaders() });
 
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {

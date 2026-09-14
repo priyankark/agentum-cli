@@ -4,7 +4,10 @@
  */
 
 import * as pty from 'node-pty';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID as uuidv4 } from 'crypto';
+import { accessSync, constants, statSync } from 'fs';
+import * as path from 'path';
+import { releaseExitedPty } from './pty-cleanup';
 import {
   Session,
   SessionConfig,
@@ -16,6 +19,29 @@ import {
 const DEFAULT_COLS = 80;
 const DEFAULT_ROWS = 24;
 const MAX_OUTPUT_BUFFER_LINES = 1000;
+
+/** Resolve the installed CLI without evaluating a command supplied by the phone. */
+export function resolveCline(env: NodeJS.ProcessEnv = process.env): { file: string; args: string[] } {
+  const searchPath = env.PATH || env.Path || '';
+  for (const directory of searchPath.split(path.delimiter).filter(Boolean)) {
+    for (const name of process.platform === 'win32' ? ['cline.exe', 'cline.cmd'] : ['cline']) {
+      const candidate = path.resolve(directory, name);
+      try {
+        accessSync(candidate, process.platform === 'win32' ? constants.F_OK : constants.X_OK);
+        if (!statSync(candidate).isFile()) continue;
+        // npm's Windows shim is a batch file. Run its official JS entry with Node
+        // directly so paths and arguments never go through cmd/PowerShell parsing.
+        if (name.endsWith('.cmd')) {
+          const script = path.join(directory, 'node_modules', 'cline', 'bin', 'cline');
+          accessSync(script, constants.R_OK);
+          return { file: process.execPath, args: [script, '--tui', '--auto-approve', 'false'] };
+        }
+        return { file: candidate, args: ['--tui', '--auto-approve', 'false'] };
+      } catch { /* Try the next PATH entry. */ }
+    }
+  }
+  throw new Error('Cline is not installed on this computer. Run npm install -g cline, then cline auth, and restart ag from that terminal.');
+}
 
 /**
  * SessionManager handles creation, management, and cleanup of PTY sessions
@@ -32,6 +58,12 @@ export class SessionManager {
    * Create a new PTY session
    */
   createSession(config: SessionConfig): Session {
+    if (config.preset !== undefined && config.preset !== 'cline') throw new Error('Unsupported terminal preset');
+    if (config.cwd !== undefined) {
+      try {
+        if (typeof config.cwd !== 'string' || !config.cwd.trim() || !path.isAbsolute(config.cwd) || !statSync(config.cwd).isDirectory()) throw new Error('Invalid folder');
+      } catch { throw new Error('Choose an existing absolute project folder on this computer.'); }
+    }
     const sessionId = config.id || uuidv4();
     const cols = config.cols || DEFAULT_COLS;
     const rows = config.rows || DEFAULT_ROWS;
@@ -42,14 +74,15 @@ export class SessionManager {
     // Build the full command to execute
     // If a command is provided, pass it directly to shell -c without parsing
     // This preserves quotes and special characters correctly
-    const command = config.command?.trim() || '';
-    const fullArgs = command ? ['-c', command] : [];
+    const command = config.preset === 'cline' ? 'cline' : config.command?.trim() || '';
+    const launch = config.preset === 'cline' ? resolveCline({ ...process.env, ...config.env }) : {
+      file: shell, args: command ? ['-c', command] : [],
+    };
 
     console.log(`[SESSION] Creating session ${sessionId}`);
-    console.log(`[SESSION] Shell: ${shell}, Command: "${command}", FullArgs: ${JSON.stringify(fullArgs)}`);
 
     // Create the PTY process
-    const ptyProcess = pty.spawn(shell, fullArgs, {
+    const ptyProcess = pty.spawn(launch.file, launch.args, {
       name: 'xterm-256color',
       cols,
       rows,
@@ -67,8 +100,10 @@ export class SessionManager {
     const session: Session = {
       id: sessionId,
       name: config.name || command || 'Shell',
-      command: config.command,
-      args: config.args || [],
+      command,
+      preset: config.preset,
+      cwd: config.cwd || process.cwd(),
+      args: launch.args,
       state: SessionState.RUNNING,
       createdAt: Date.now(),
       pty: ptyProcess,
@@ -113,6 +148,8 @@ export class SessionManager {
       session.exitCode = exitCode;
       session.exitSignal = signal !== undefined ? String(signal) : undefined;
 
+      releaseExitedPty(ptyProcess);
+
       this.eventHandlers.onExit(sessionId, exitCode, session.exitSignal);
     });
   }
@@ -139,6 +176,8 @@ export class SessionManager {
       id: session.id,
       name: session.name,
       command: session.command,
+      preset: session.preset,
+      cwd: session.cwd,
       state: session.state,
       createdAt: session.createdAt,
       pid: session.pty.pid,

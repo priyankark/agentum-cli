@@ -8,7 +8,7 @@
  * - Comprehensive error handling and logging
  */
 
-import type { VNCMouseEvent, VNCKeyboardEvent, ScreenDimensions } from './types';
+import type { VNCMouseEvent, VNCScrollEvent, VNCKeyboardEvent, ScreenDimensions } from './types';
 
 // Lazy load robotjs to avoid issues if not installed
 let robot: typeof import('@hurdlegroup/robotjs') | null = null;
@@ -21,8 +21,8 @@ const KEY_MAP: Record<string, string> = {
   // Special keys
   'backspace': 'backspace',
   'delete': 'delete',
-  'enter': 'return',        // robotjs uses 'return' not 'enter' on macOS
-  'return': 'return',
+  'enter': 'enter',         // Native RobotJS key table uses 'enter'.
+  'return': 'enter',
   'tab': 'tab',
   'escape': 'escape',
   'esc': 'escape',
@@ -162,10 +162,10 @@ export function handleMouseEvent(event: VNCMouseEvent): void {
     // Handle click events
     switch (event.eventType) {
       case 'down':
-        robot!.mouseToggle('down', 'left');
+        robot!.mouseToggle('down', event.button || 'left');
         break;
       case 'up':
-        robot!.mouseToggle('up', 'left');
+        robot!.mouseToggle('up', event.button || 'left');
         break;
       case 'move':
         // Already moved above
@@ -230,10 +230,14 @@ export function handleKeyboardEvent(event: VNCKeyboardEvent): void {
     const normalizedKey = normalizeKeyName(key);
     const normalizedModifiers = normalizeModifiers(modifier);
 
-    console.log(`[VNC Input] KeyTap: "${key}" -> "${normalizedKey}"${normalizedModifiers.length > 0 ? ` with modifiers [${normalizedModifiers.join(', ')}]` : ''}`);
 
     if (normalizedModifiers.length > 0) {
-      robot!.keyTap(normalizedKey, normalizedModifiers as any);
+      try {
+        robot!.keyTap(normalizedKey, normalizedModifiers as any);
+      } finally {
+        // Clear modifier flags before subsequent Unicode typeString events on macOS.
+        for (const modifier of normalizedModifiers) robot!.keyToggle(modifier, 'up');
+      }
     } else {
       robot!.keyTap(normalizedKey);
     }
@@ -253,7 +257,6 @@ export function typeString(text: string): void {
   }
 
   try {
-    console.log(`[VNC Input] TypeString: "${text}"`);
     robot!.typeString(text);
   } catch (error) {
     console.error('[VNC Input] Error typing string:', error);
@@ -310,7 +313,7 @@ export function typeText(text: string, pressEnter: boolean = false): void {
   try {
     robot!.typeString(text);
     if (pressEnter) {
-      robot!.keyTap('return');
+      robot!.keyTap('enter');
     }
   } catch (error) {
     console.error('[VNC Input] Error typing text:', error);
@@ -329,7 +332,6 @@ export function keyCombo(key: string, modifiers: string[]): void {
   try {
     const normalizedKey = normalizeKeyName(key);
     const normalizedModifiers = normalizeModifiers(modifiers);
-    console.log(`[VNC Input] KeyCombo: ${normalizedModifiers.join('+')}+${normalizedKey}`);
     robot!.keyTap(normalizedKey, normalizedModifiers as any);
   } catch (error) {
     console.error('[VNC Input] Error performing key combo:', error);
@@ -379,3 +381,19 @@ export default {
   keyToggle,
   isRobotAvailable,
 };
+
+/** Release without moving the pointer back to the original drag position. */
+export function releaseMouseButton(button: 'left' | 'right' | 'middle'): void {
+  if (!robot) return;
+  try { robot.mouseToggle('up', button); } catch { /* Best effort on driver teardown. */ }
+}
+
+export function nativeScrollDelta(ticks: number, platform: string = process.platform): number {
+  return ticks * (platform === 'win32' ? 120 : platform === 'darwin' ? 12 : 1);
+}
+
+export function handleScrollEvent(event: VNCScrollEvent): void {
+  if (!robot && !initializeRobot()) return;
+  handleMouseEvent({ ...event, type: 'vnc_mouse_event', eventType: 'move' });
+  robot!.scrollMouse(nativeScrollDelta(event.deltaX), nativeScrollDelta(event.deltaY));
+}

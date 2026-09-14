@@ -37,21 +37,22 @@ test('WSL1, WSL2 and WSLg get Windows-host guidance without disabling ordinary L
   for (const [platform, release, env] of [['linux', '6.8.0-generic', { DISPLAY: ':0', WAYLAND_DISPLAY: 'wayland-0' }], ['darwin', '24.0', {}], ['win32', '10.0', { WSL_DISTRO_NAME: 'Ubuntu' }]]) assert.equal(support.desktopUnavailableReason(platform, release, env), undefined);
 });
 
-test('WSL keeps the existing terminal protocol working and prints actionable desktop guidance', { timeout: 5000 }, async () => {
+test('WSL disables desktop listener, advertises the reason and keeps the real terminal connection alive', { timeout: 5000 }, async () => {
+  process.env.AGENTUM_AUTH_TOKEN = 'w'.repeat(64);
   const { AgentumServer } = require('../dist/server');
   const { WebSocket } = require('ws');
-  const original = support.desktopUnavailableReason; const warn = console.warn; const warnings = [];
-  support.desktopUnavailableReason = () => support.WSL_DESKTOP_GUIDANCE; console.warn = message => warnings.push(message);
+  const original = support.desktopUnavailableReason;
+  support.desktopUnavailableReason = () => support.WSL_DESKTOP_GUIDANCE;
   const server = new AgentumServer({ port: 0, vncPort: 0, host: '127.0.0.1' });
   let socket;
   try {
-    await server.start(); assert.equal(server.isVncEnabled(), false); assert.match(warnings.join(' '), /Windows PowerShell/);
-    socket = new WebSocket(`ws://127.0.0.1:${server.wss.address().port}`);
-    await new Promise((resolve, reject) => { socket.once('open', resolve); socket.once('error', reject); });
+    await server.start();
+    assert.equal(server.isVncEnabled(), false);
+    socket = new WebSocket(`ws://127.0.0.1:${server.getConnectionDetails().port}`, { headers: { Authorization: `Bearer ${process.env.AGENTUM_AUTH_TOKEN}` } });
+    const hello = await new Promise((resolve, reject) => { socket.once('message', raw => resolve(JSON.parse(raw))); socket.once('error', reject); });
+    assert.equal(hello.features.pty, true); assert.equal(hello.features.vnc, false); assert.equal(hello.vncPort, undefined);
+    assert.match(hello.desktopUnavailableReason, /WSL\/WSLg/);
     const pong = new Promise(resolve => socket.on('message', raw => { const data = JSON.parse(raw); if (data.type === 'pong') resolve(data); }));
     socket.send(JSON.stringify({ type: 'ping' })); assert.equal((await pong).type, 'pong');
-    const created = new Promise(resolve => socket.on('message', raw => { const data = JSON.parse(raw); if (data.type === 'session_created') resolve(data); }));
-    socket.send(JSON.stringify({ type: 'create_session', name: 'Platform validation', command: process.platform === 'win32' ? 'echo AGENTUM-PLATFORM' : "printf AGENTUM-PLATFORM" }));
-    assert.ok((await created).sessionId);
-  } finally { socket?.terminate(); await server.shutdown(); support.desktopUnavailableReason = original; console.warn = warn; }
+  } finally { socket?.terminate(); await server.shutdown(); support.desktopUnavailableReason = original; }
 });

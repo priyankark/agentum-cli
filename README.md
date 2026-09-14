@@ -1,13 +1,16 @@
 # Agentum
 
-Control AI coding agents from your phone. Mirror Claude Code, GitHub Copilot, and OpenAI Codex to mobile - code from your couch, bed, or anywhere.
+> This release requires the updated Agentum mobile app and one-time pairing. Older anonymous apps cannot connect. See [connection setup](SECURITY_CHANGES.md).
+
+
+Control AI coding agents from your phone. Mirror Claude Code, GitHub Copilot, OpenAI Codex and Cline to mobile.
 
 ## How It Works
 
 ```
 ┌──────────────┐     WebSocket      ┌──────────────┐
 │  Your Phone  │ ◄────────────────► │   Desktop    │
-│  (Agentum    │                    │(agentum start)│
+│  (Agentum    │                    │(ag start)│
 │   Mobile)    │                    │              │
 └──────────────┘                    └──────────────┘
                                            │
@@ -28,6 +31,7 @@ You need [Node.js](https://nodejs.org/) (v18+) installed. Then, install and auth
 | Claude Code | `npm install -g @anthropic-ai/claude-code` | `claude` (follow prompts) |
 | GitHub Copilot | `gh extension install github/gh-copilot` | `gh auth login` |
 | OpenAI Codex | `npm install -g @openai/codex` | `codex` (follow prompts) |
+| Cline | `npm install -g cline` | `cline auth` |
 
 Only install and authenticate the agents you plan to use.
 
@@ -38,80 +42,95 @@ Only install and authenticate the agents you plan to use.
 ### 1. Install CLI on your desktop
 
 ```bash
-npm install -g agentum
+npm install -g https://github.com/priyankark/agentum-cli/releases/download/v2.0.0/agentum-2.0.0.tgz
 ```
+
+The GitHub release includes the built package. Agentum 2 requires AirCodum Agentum 1.1 or later. npm registry publication is pending publisher authentication; the unversioned npm package still installs the older server. Once version 2 is available on npm, `npm install -g agentum@2` is equivalent.
 
 ### 2. Start the server
 
 ```bash
-npx agentum start
+ag start
 ```
 
-This shows your connection info:
-```
-Terminal server started on port 11042
-Connect from mobile using IP: <your-ip>, Port: 11042
-```
+The server shows your computer name, terminal/desktop ports, and available Wi-Fi or Tailscale addresses. The default terminal port is **11042**, and desktop sharing uses **11043**.
 
-### 3. Find your IP (if needed)
+### 3. Pair your phone
+
+In another terminal run:
 
 ```bash
-# macOS/Linux
-ifconfig | grep "inet " | grep -v 127.0.0.1
-
-# Or just use
-hostname -I   # Linux
-ipconfig      # Windows
+ag pair
 ```
 
-### 4. Get the mobile app
+In the updated Agentum app, add a computer and scan the QR code. You can also enter the host, ports, and pairing key printed below it. QR generation stays on your computer. If you have several network adapters, choose the address your phone can reach:
 
-| Platform | Status |
-|----------|--------|
-| iOS      | [iOS link](https://apps.apple.com/app/aircodum-agentum/id6758521566) |
-| Android  | Coming soon |
+```bash
+ag pair --host 192.168.1.10
+ag pair --host 100.89.59.102
+```
 
-### 5. Connect
+Phones on the same Wi-Fi connect directly; Tailscale is optional for access from other networks. Public remote access requires a trusted TLS reverse proxy. See [setup details](SECURITY_CHANGES.md).
 
-Open the mobile app and enter:
-- **IP/Host**: Your desktop's IP address
-- **Port**: `11042` (default)
+### Multiple computers and instances
 
-That's it! Your AI agents now stream to your phone.
+Save each computer in the app and tap its card to switch. For separate Agentum instances on one computer, choose different port pairs:
+
+```bash
+ag start --port 11042 --name Work
+ag start --port 12042 --name Personal
+ag pair --port 12042
+```
+
+Desktop ports default to the terminal port plus one. Each terminal port has a persistent identity, so the app can detect an address that now points to a different instance. Terminal/agent sessions belong to their instance. **Desktop mode controls the same foreground desktop on that computer**; separate instances are not separate virtual desktops.
+
+Desktop supports pinch zoom and pan in the updated app, wheel scrolling, right-click, explicit drag, and text/shortcut input. Native Screen Recording and Accessibility permissions are required on macOS.
+
+### Cline sessions
+
+After installing and authenticating Cline, restart `ag` from the same terminal so Cline is on its PATH. In the updated app, choose **Cline → New**, name the session, and optionally enter an absolute project folder on this computer. Leaving it empty uses the directory where `ag` started.
+
+The preset launches the official interactive CLI with `cline --tui --auto-approve false`. Use the phone’s terminal key row for arrows, Enter, Tab, Esc and Ctrl+C; swipe horizontally to see additional keys. Tool approval prompts remain enabled. An unavailable installation produces setup guidance in the app.
+
+Each new session starts a separate conversation. Running PTYs stay alive when a phone disconnects, and reattaching replays their terminal output. Stopping the server ends its PTYs; use Cline’s own history/resume commands from a manual terminal if you need an older conversation. Older Agentum servers can run `cline` manually in PTY mode, while the dedicated preset requires Agentum 2 and the updated app.
+
+### Windows and WSL
+
+Run Agentum in Windows PowerShell on the machine that owns the desktop. WSL/WSLg cannot capture the Windows host desktop; Agentum detects this and keeps terminal sessions available with explicit guidance. For WSL commands, create a terminal session running `wsl.exe` from the Windows-hosted server.
 
 ---
 
 ## Commands
 
-### `agentum start`
+### `ag start`
 
 Start the server. Run this first.
 
 ```bash
-agentum start                    # Default: port 11042
-agentum start --port 8080        # Custom port
-agentum start --no-vnc           # Disable screen sharing
+ag start                    # Default: port 11042
+ag start --port 8080        # Custom port
+ag start --no-vnc           # Disable screen sharing
 ```
 
-### `agentum run <command>`
+### `ag run <command>`
 
 Run any command and mirror output to mobile.
 
 ```bash
-agentum run "npm test"
-agentum run "python train.py" -d     # Detached (background)
-agentum run "make build" -n build    # Named session
+ag run "npm test"
+ag run "python train.py" -d     # Detached (background)
+ag run "make build" -n build    # Named session
 ```
 
-### `agentum list`
+### `ag list`
 
 Show active sessions.
 
-### `agentum attach <id>`
+### `ag attach <id>`
 
 Attach to a session locally. Press `Ctrl+]` to detach.
 
-### `agentum kill <id>`
+### `ag kill <id>`
 
 Stop a session.
 
@@ -168,7 +187,7 @@ Access from anywhere, not just your local network. Works through firewalls and N
 
 **Port in use?**
 ```bash
-agentum start --port 8080
+ag start --port 8080
 ```
 
 **Can't connect from phone?**
@@ -187,11 +206,3 @@ ifconfig | grep "inet "
 
 - [Repository](https://github.com/priyankark/agentum-cli)
 - [AirCodum](https://aircodum.com)
-
-## Windows and WSL desktop setup
-
-Install normally with `npm install -g agentum`; Windows no longer needs `--ignore-scripts`. The platform-aware install step repairs node-pty’s helper only on macOS.
-
-Run `ag start` from Windows PowerShell on the Windows computer or VM whose desktop you want to see. WSL/WSLg exposes Linux app windows rather than the host Windows desktop, so Agentum detects WSL, prints setup guidance and leaves desktop sharing off instead of showing a misleading black screen. Terminal sessions continue to work. To keep working inside WSL while viewing Windows, start Agentum on Windows and create a terminal session running `wsl.exe`.
-
-This 1.0.3 maintenance release preserves the existing app connection protocol. It does not require the newer paired app/server release.

@@ -1,0 +1,64 @@
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const Module = require('node:module');
+const originalLoad = Module._load;
+let captures = 0, frames = [], value = 1, fail = false, deferredCapture = null;
+let screenSize = { width: 1440, height: 900 };
+const screenshot = async () => { captures++; if (deferredCapture) return new Promise(resolve => { deferredCapture.resolve = resolve; }); if (fail) { fail = false; throw Error('capture'); } const frame = Buffer.alloc(4096); frame[1] = value; return frame; };
+const native = { getScreenSize: () => screenSize };
+const createImage = async () => ({ width: 1440, height: 900, resize() {}, getBuffer: async () => Buffer.from('jpeg') });
+Module._load = function(name, ...args) {
+  if (name === 'screenshot-desktop') return screenshot;
+  if (name === './native-capture') return { capturePrimaryScreen: screenshot, nativeResizeJpeg: async () => null };
+  if (name === 'vscode') return {};
+  if (name === './commanding/robotjs-handlers') return { typedRobot: native };
+  if (name === './input-handler') return native;
+  if (name === './jimp') return { createImage };
+  if (name === './image-utils') return { createImage };
+  if (['./commanding/command-handler', './files/utils', './ai/api', './ai/utils'].includes(name)) return {};
+  return originalLoad.call(this, name, ...args);
+};
+const { ScreenCaptureManager } = require('../dist/vnc/screen-capture.js');
+Module._load = originalLoad;
+const settle = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
+test('capture sends immediately, detects small edits, recovers from errors and cancels on stop', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'], now: 10000 });
+  const manager = ScreenCaptureManager.getInstance();
+  const stop = manager.subscribe((frame, dimensions) => frames.push({ frame, dimensions }));
+  await settle();
+  assert.equal(frames.length, 1, 'first frame must not wait for a 100ms coalescing timer');
+  assert.deepEqual(frames[0].dimensions, { width: 1440, height: 900 });
+  t.mock.timers.tick(40); await settle();
+  assert.equal(frames.length, 1, 'unchanged desktop should not re-encode');
+  value = 2; t.mock.timers.tick(40); await settle();
+  assert.equal(frames.length, 2);
+  fail = true; t.mock.timers.tick(40); await settle();
+  value = 3; t.mock.timers.tick(40); await settle();
+  assert.equal(frames.length, 3, 'capture must recover after an error');
+  stop(); const count = captures;
+  t.mock.timers.tick(2000); await settle();
+  assert.equal(captures, count, 'stop must cancel pending captures');
+  const stopAgain = manager.subscribe(() => {}); await settle();
+  assert.equal(captures, count + 1, 'restart starts exactly one loop');
+  stopAgain();
+  manager.shutdown?.();
+});
+
+
+test('switching subscriptions during a slow capture drops old frames and adapts changed desktop dimensions', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'], now: 20000 });
+  const manager = ScreenCaptureManager.getInstance();
+  const old = [], current = [];
+  deferredCapture = {};
+  const stopOld = manager.subscribe(frame => old.push(frame));
+  const pending = deferredCapture;
+  stopOld();
+  const stopCurrent = manager.subscribe((frame, dimensions) => current.push(dimensions));
+  deferredCapture = null;
+  pending.resolve(Buffer.alloc(4096)); await settle();
+  assert.equal(old.length, 0); assert.equal(current.length, 0, 'old capture must not appear in the new connection');
+  screenSize = { width: 1280, height: 720 };
+  t.mock.timers.tick(20); await settle();
+  assert.deepEqual(current, [{ width: 1280, height: 720 }]);
+  stopCurrent(); manager.shutdown();
+});

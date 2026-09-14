@@ -4,10 +4,13 @@
  */
 
 import { WebSocketServer, WebSocket } from 'ws';
-import { desktopUnavailableReason } from './desktop-support';
 import * as fs from 'fs';
+import { getAuthToken, privateDir } from './auth';
+import { capabilities, getInstanceIdentity, InstanceIdentity } from './instance';
+import { desktopUnavailableReason } from './desktop-support';
+import { protectedBind, authorized, MAX_PAYLOAD, messageBudget } from './security';
 import * as path from 'path';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID as uuidv4 } from 'crypto';
 import { SessionManager } from './session';
 import { ClaudeSessionManager, ClaudeMessage, ClaudeSessionConfig } from './claude-session';
 import { CodexSessionManager, CodexMessage, CodexSessionConfig } from './codex-session';
@@ -32,7 +35,7 @@ import {
 } from './types';
 
 const DEFAULT_PORT = 11042;
-const DEFAULT_VNC_PORT = 11043;
+
 const DEFAULT_HEARTBEAT_INTERVAL = 30000;
 const DEFAULT_MAX_OUTPUT_BUFFER = 1000;
 
@@ -48,22 +51,34 @@ export class AgentumServer {
   private codexSessionManager: CodexSessionManager;
   private copilotSessionManager: CopilotSessionManager;
   private vncServer: VNCServer | null = null;
+  private desktopUnavailable: string | undefined;
   private heartbeatInterval: NodeJS.Timeout | null = null;
   private cleanupInterval: NodeJS.Timeout | null = null;
   private config: Required<ServerConfig>;
+  private instance!: InstanceIdentity;
   private isShuttingDown = false;
+  private ready = false;
   private mediaDir: string;
+  private creationTimes: number[] = [];
+  private creationBudget(): boolean {
+    this.creationTimes = this.creationTimes.filter(time => Date.now() - time < 60000);
+    if (this.creationTimes.length >= 8) return false;
+    this.creationTimes.push(Date.now()); return true;
+  }
 
   constructor(config: Partial<ServerConfig> = {}) {
     this.config = {
-      port: config.port || DEFAULT_PORT,
-      host: config.host || '0.0.0.0',
+      port: config.port ?? DEFAULT_PORT,
+      host: config.allowRemoteConnections === false ? '127.0.0.1' : (config.host || '0.0.0.0'),
       heartbeatInterval: config.heartbeatInterval || DEFAULT_HEARTBEAT_INTERVAL,
       maxOutputBuffer: config.maxOutputBuffer || DEFAULT_MAX_OUTPUT_BUFFER,
       allowRemoteConnections: config.allowRemoteConnections ?? true,
-      vncPort: config.vncPort || DEFAULT_VNC_PORT,
+      vncPort: config.vncPort ?? ((config.port ?? DEFAULT_PORT) === 0 ? 0 : (config.port ?? DEFAULT_PORT) + 1),
+      instanceName: config.instanceName ?? '',
       enableVnc: config.enableVnc ?? true,
     };
+
+    if (![this.config.port, this.config.vncPort].every(port => Number.isInteger(port) && port >= 0 && port <= 65535)) throw new Error('Ports must be between 1 and 65535');
 
     // Initialize PTY session manager with event handlers
     this.sessionManager = new SessionManager({
@@ -109,9 +124,9 @@ export class AgentumServer {
 
     // Prepare media/temp directory - use /tmp by default for universal access
     const configuredTemp = process.env.AGENTUM_TEMP_DIR;
-    this.mediaDir = configuredTemp || '/tmp';
+    this.mediaDir = configuredTemp || path.join(privateDir, 'media');
     try {
-      fs.mkdirSync(this.mediaDir, { recursive: true });
+      fs.mkdirSync(this.mediaDir, { recursive: true, mode: 0o700 });
       console.log(`[MEDIA] Using media inbox at: ${this.mediaDir}`);
     } catch (e) {
       console.error(`[MEDIA] Failed to create media directory at ${this.mediaDir}:`, e);
@@ -124,47 +139,56 @@ export class AgentumServer {
   start(): Promise<void> {
     return new Promise((resolve, reject) => {
       try {
+        if (!protectedBind(this.config.host)) throw new Error("Use a private Wi-Fi/Tailscale interface, or localhost behind a TLS proxy.");
+        const token = getAuthToken();
         this.wss = new WebSocketServer({
           port: this.config.port,
           host: this.config.host,
+          maxPayload: MAX_PAYLOAD, perMessageDeflate: false,
+          verifyClient: ({ req }: { req: import('http').IncomingMessage }) => (this.wss?.clients.size ?? 0) < 4 && authorized(req, token),
         });
 
         this.wss.on('connection', this.handleConnection.bind(this));
 
         this.wss.on('error', (error: Error) => {
           console.error('WebSocket server error:', error);
-          if (!this.wss) {
-            reject(error);
-          }
+          reject(error);
         });
 
         this.wss.on('listening', async () => {
-          console.log(
-            `Agentum WebSocket server listening on ${this.config.host}:${this.config.port}`
-          );
+          try {
+            this.config.port = (this.wss!.address() as import('net').AddressInfo).port;
+            this.instance = getInstanceIdentity(this.config.port, this.config.instanceName || undefined);
+            console.log(
+              `Agentum WebSocket server listening on ${this.config.host}:${this.config.port}`
+            );
 
-          // WSLg exposes Linux app surfaces, not the host Windows desktop.
-          const desktopWarning = this.config.enableVnc ? desktopUnavailableReason() : undefined;
-          if (desktopWarning) console.warn(desktopWarning);
-          if (this.config.enableVnc && !desktopWarning) {
-            try {
-              this.vncServer = await createVNCServer(this.config.vncPort, this.config.host);
-              console.log(
-                `VNC WebSocket server listening on ${this.config.host}:${this.config.vncPort}`
-              );
-            } catch (error) {
-              console.error(`Failed to start VNC server: ${(error as Error).message}`);
-              // Don't fail the main server if VNC fails
+            // A WSL display is not the host Windows desktop. Keep terminals available.
+            this.desktopUnavailable = this.config.enableVnc ? desktopUnavailableReason() : undefined;
+            if (this.desktopUnavailable) console.warn(this.desktopUnavailable);
+            if (this.config.enableVnc && !this.desktopUnavailable) {
+              try {
+                this.vncServer = await createVNCServer(this.config.vncPort, this.config.host, this.instance);
+                console.log(
+                  `VNC WebSocket server listening on ${this.config.host}:${this.config.vncPort}`
+                );
+              } catch (error) {
+                console.error(`Failed to start VNC server: ${(error as Error).message}`);
+                // Don't fail the main server if VNC fails
+              }
             }
-          }
 
-          // Start heartbeat interval
-          this.startHeartbeat();
+            this.ready = true;
+            for (const clientId of this.clients.keys()) this.sendInitialState(clientId);
 
-          // Start cleanup interval for old sessions
-          this.startCleanupInterval();
+            // Start heartbeat interval
+            this.startHeartbeat();
 
-          resolve();
+            // Start cleanup interval for old sessions
+            this.startCleanupInterval();
+
+            resolve();
+          } catch (error) { await this.shutdown(); reject(error); }
         });
       } catch (error) {
         reject(error);
@@ -193,8 +217,12 @@ export class AgentumServer {
     this.clients.set(clientId, client);
 
     // Set up socket event handlers
-    socket.on('message', (data: Buffer | string) => {
-      this.handleMessage(clientId, data);
+    const budget = messageBudget();
+    let pending = 0;
+    socket.on('message', (data: Buffer | string, isBinary: boolean) => {
+      if (!budget(Buffer.byteLength(data)) || pending >= 16) { socket.close(1008, 'Message limit exceeded'); return; }
+      pending++;
+      void this.handleMessage(clientId, data, isBinary).catch(() => this.sendError(clientId, 'Invalid request')).finally(() => { pending--; });
     });
 
     socket.on('close', () => {
@@ -213,23 +241,36 @@ export class AgentumServer {
       }
     });
 
-    // Send initial session lists
+    this.sendInitialState(clientId);
+  }
+
+  private sendInitialState(clientId: string): void {
+    const client = this.clients.get(clientId);
+    if (!this.ready || !client) return;
+    this.sendCapabilities(client.socket);
     this.sendSessionList(clientId);
     this.sendClaudeSessionList(clientId);
     this.sendCodexSessionList(clientId);
     this.sendCopilotSessionList(clientId);
   }
 
+  public getConnectionDetails() { return { port: this.config.port, vncPort: this.vncServer?.getPort(), instance: this.instance }; }
+
+  private sendCapabilities(socket: WebSocket): void {
+    if (socket.readyState !== WebSocket.OPEN) return;
+    socket.send(JSON.stringify({ ...capabilities(this.instance, this.vncServer?.getPort()),
+      ...(this.desktopUnavailable ? { desktopUnavailableReason: this.desktopUnavailable } : {}) }));
+  }
+
   /**
    * Handle incoming message from client
    */
-  private handleMessage(clientId: string, rawData: Buffer | string): void {
+  private async handleMessage(clientId: string, rawData: Buffer | string, isBinary: boolean): Promise<void> {
     const client = this.clients.get(clientId);
     if (!client) return;
 
-    const isBinary = Buffer.isBuffer(rawData);
-    console.log(`[RAW] From ${clientId}: binary=${isBinary}, len=${isBinary ? rawData.length : (rawData as string).length}`);
-
+    if (isBinary) { this.handleBinaryUpload(clientId, Buffer.from(rawData)); return; }
+    if (Buffer.byteLength(rawData) > 64 * 1024) { this.sendError(clientId, 'Text message too large'); return; }
     try {
       // Try to parse as JSON first (could be binary buffer containing JSON text)
       let data: string;
@@ -243,8 +284,20 @@ export class AgentumServer {
       const trimmed = data.trim();
       if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
         const message: WebSocketMessage = JSON.parse(data);
-        console.log(`[MSG] From ${clientId}: type=${message.type}`);
+        if (!message || typeof message.type !== 'string') throw new Error('Invalid message');
+        for (const name of ['sessionId', 'data', 'prompt', 'command', 'name', 'cwd', 'workingDirectory']) {
+          const value = (message as any)[name];
+          if (value !== undefined && (typeof value !== 'string' || value.length > 32768)) throw new Error('Invalid field');
+        }
+        if (message.type === MessageType.RESIZE || message.type === MessageType.CREATE_SESSION) {
+          for (const name of ['cols', 'rows']) {
+            const value = (message as any)[name];
+            if (value !== undefined && (!Number.isInteger(value) || value < 1 || value > 500)) throw new Error('Invalid terminal size');
+          }
+        }
 
+      const creationTypes = [MessageType.CREATE_SESSION, MessageType.CLAUDE_CREATE_SESSION, MessageType.CODEX_CREATE_SESSION, MessageType.COPILOT_CREATE_SESSION];
+      if (creationTypes.includes(message.type) && !this.creationBudget()) throw new Error('Session creation limit exceeded');
       switch (message.type) {
         case MessageType.INPUT:
           this.handleInput(clientId, message as InputMessage);
@@ -287,7 +340,7 @@ export class AgentumServer {
           break;
 
         case MessageType.CLAUDE_SEND_PROMPT:
-          this.handleClaudeSendPrompt(clientId, message as ClaudeSendPromptMessage);
+          await this.handleClaudeSendPrompt(clientId, message as ClaudeSendPromptMessage);
           break;
 
         case MessageType.CLAUDE_LIST_SESSIONS:
@@ -320,7 +373,7 @@ export class AgentumServer {
           break;
 
         case MessageType.CODEX_SEND_PROMPT:
-          this.handleCodexSendPrompt(clientId, message as CodexSendPromptMessage);
+          await this.handleCodexSendPrompt(clientId, message as CodexSendPromptMessage);
           break;
 
         case MessageType.CODEX_LIST_SESSIONS:
@@ -349,7 +402,7 @@ export class AgentumServer {
           break;
 
         case MessageType.COPILOT_SEND_PROMPT:
-          this.handleCopilotSendPrompt(clientId, message as CopilotSendPromptMessage);
+          await this.handleCopilotSendPrompt(clientId, message as CopilotSendPromptMessage);
           break;
 
         case MessageType.COPILOT_LIST_SESSIONS:
@@ -375,20 +428,8 @@ export class AgentumServer {
         default:
           this.sendError(clientId, `Unknown message type: ${message.type}`);
       }
-      } else {
-        // Not JSON - treat as binary upload
-        if (Buffer.isBuffer(rawData)) {
-          this.handleBinaryUpload(clientId, rawData);
-        }
-      }
+      } else { throw new Error('Expected a JSON object'); }
     } catch (error) {
-      // If JSON parse failed but it's binary data, handle as upload
-      if (Buffer.isBuffer(rawData)) {
-        try {
-          this.handleBinaryUpload(clientId, rawData);
-          return;
-        } catch {}
-      }
       console.error(`Error parsing message from ${clientId}:`, error);
       this.sendError(clientId, 'Invalid message format');
     }
@@ -405,11 +446,11 @@ export class AgentumServer {
     const ext = this.detectFileExtension(data);
     const timestamp = new Date().toISOString().replace(/[-:T]/g, '').replace(/\..+/, '');
     const shortId = clientId.split('-')[0];
-    const fileName = `upload_${shortId}_${timestamp}.${ext}`;
+    const fileName = `upload_${shortId}_${timestamp}_${uuidv4()}.${ext}`;
     const filePath = path.join(this.mediaDir, fileName);
 
     try {
-      fs.writeFileSync(filePath, data);
+      fs.writeFileSync(filePath, data, { flag: 'wx', mode: 0o600 });
       if (!client.recentUploads) client.recentUploads = [];
       client.recentUploads.push(filePath);
       // Keep only the last 10 uploads per client
@@ -608,10 +649,11 @@ export class AgentumServer {
     message: CreateSessionMessage
   ): void {
     try {
-      console.log(`[CREATE] Creating session for client ${clientId}: command="${message.command}"`);
       const session = this.sessionManager.createSession({
         name: message.name || message.command,
         command: message.command,
+        preset: message.preset,
+        cwd: message.cwd,
         cols: message.cols,
         rows: message.rows,
       });
@@ -632,6 +674,7 @@ export class AgentumServer {
       this.sendToClient(clientId, {
         type: MessageType.SESSION_CREATED,
         sessionId: session.id,
+        preset: session.preset,
         timestamp: Date.now(),
       });
 
@@ -662,13 +705,9 @@ export class AgentumServer {
       // Broadcast session list update
       this.broadcastSessionList();
 
-      console.log(`[CREATE] Session ${session.id} created successfully: ${message.command}`);
     } catch (error) {
       console.error('Error creating session:', error);
-      this.sendError(
-        clientId,
-        `Failed to create session: ${(error as Error).message}`
-      );
+      this.sendToClient(clientId, { type: MessageType.ERROR, error: `Failed to create session: ${(error as Error).message}`, preset: message.preset, timestamp: Date.now() });
     }
   }
 
@@ -725,10 +764,8 @@ export class AgentumServer {
     );
 
     // Show preview of data (first 100 chars, escape control chars for readability)
-    const preview = data.slice(0, 100).replace(/[\x00-\x1f]/g, (c) => `\\x${c.charCodeAt(0).toString(16).padStart(2, '0')}`);
     console.log(`[OUTPUT] Session ${sessionId}:`);
     console.log(`  - Data length: ${data.length} bytes`);
-    console.log(`  - Preview: ${preview}${data.length > 100 ? '...' : ''}`);
     console.log(`  - Attached clients: ${attachedClients.length}`);
     attachedClients.forEach(c => console.log(`    - Client: ${c.id}`));
 
@@ -815,9 +852,9 @@ export class AgentumServer {
     const client = this.clients.get(clientId);
     if (!client || client.socket.readyState !== WebSocket.OPEN) return;
 
+    if (client.socket.bufferedAmount > MAX_PAYLOAD) { client.socket.close(1008, "Client is too slow"); return; }
     try {
       const jsonMsg = JSON.stringify(message);
-      console.log(`[SEND] To ${clientId}: ${jsonMsg.slice(0, 200)}${jsonMsg.length > 200 ? '...' : ''}`);
       client.socket.send(jsonMsg);
       console.log(`[SEND] Success to ${clientId}`);
     } catch (error) {

@@ -1,6 +1,6 @@
 {
   "name": "agentum",
-  "version": "1.0.3",
+  "version": "2.0.0",
   "description": "Mirror terminal sessions and AI coding agents to mobile over WebSocket",
   "main": "dist/index.js",
   "bin": {
@@ -11,9 +11,11 @@
     "start": "node dist/index.js",
     "dev": "ts-node src/index.ts",
     "clean": "rm -rf dist",
-    "test": "./tests/run-all-tests.sh",
+    "test": "npm run build && node --test tests/*.test.cjs",
     "prepublishOnly": "npm run build",
     "postinstall": "node scripts/postinstall.cjs",
+    "test:security": "npm test",
+    "test:legacy": "./tests/run-all-tests.sh",
     "test:platform": "npm run build && node --test tests/platform.test.cjs",
     "test:package": "node scripts/verify-package-install.cjs"
   },
@@ -44,15 +46,14 @@
     "chalk": "^4.1.2",
     "commander": "^11.1.0",
     "jimp": "^1.6.0",
-    "node-pty": "^1.0.0",
+    "node-pty": "1.1.0",
     "screenshot-desktop": "^1.15.2",
-    "uuid": "^9.0.1",
-    "ws": "^8.16.0"
+    "ws": "^8.16.0",
+    "qrcode": "^1.5.4"
   },
   "devDependencies": {
     "@types/node": "^20.10.6",
     "@types/screenshot-desktop": "^1.15.0",
-    "@types/uuid": "^9.0.7",
     "@types/ws": "^8.5.10",
     "ts-node": "^10.9.2",
     "typescript": "^5.3.3"
