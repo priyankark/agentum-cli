@@ -7,6 +7,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import * as fs from 'fs';
 import { getAuthToken, privateDir } from './auth';
 import { capabilities, getInstanceIdentity, InstanceIdentity } from './instance';
+import { desktopUnavailableReason } from './desktop-support';
 import { protectedBind, authorized, MAX_PAYLOAD, messageBudget } from './security';
 import * as path from 'path';
 import { randomUUID as uuidv4 } from 'crypto';
@@ -50,6 +51,7 @@ export class AgentumServer {
   private codexSessionManager: CodexSessionManager;
   private copilotSessionManager: CopilotSessionManager;
   private vncServer: VNCServer | null = null;
+  private desktopUnavailable: string | undefined;
   private heartbeatInterval: NodeJS.Timeout | null = null;
   private cleanupInterval: NodeJS.Timeout | null = null;
   private config: Required<ServerConfig>;
@@ -161,8 +163,10 @@ export class AgentumServer {
               `Agentum WebSocket server listening on ${this.config.host}:${this.config.port}`
             );
 
-            // Start VNC server if enabled
-            if (this.config.enableVnc) {
+            // A WSL display is not the host Windows desktop. Keep terminals available.
+            this.desktopUnavailable = this.config.enableVnc ? desktopUnavailableReason() : undefined;
+            if (this.desktopUnavailable) console.warn(this.desktopUnavailable);
+            if (this.config.enableVnc && !this.desktopUnavailable) {
               try {
                 this.vncServer = await createVNCServer(this.config.vncPort, this.config.host, this.instance);
                 console.log(
@@ -254,7 +258,8 @@ export class AgentumServer {
 
   private sendCapabilities(socket: WebSocket): void {
     if (socket.readyState !== WebSocket.OPEN) return;
-    socket.send(JSON.stringify(capabilities(this.instance, this.vncServer?.getPort())));
+    socket.send(JSON.stringify({ ...capabilities(this.instance, this.vncServer?.getPort()),
+      ...(this.desktopUnavailable ? { desktopUnavailableReason: this.desktopUnavailable } : {}) }));
   }
 
   /**

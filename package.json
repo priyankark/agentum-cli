@@ -13,7 +13,7 @@
     "clean": "rm -rf dist",
     "test": "npm run build && node --test tests/*.test.cjs",
     "prepublishOnly": "npm run build",
-    "postinstall": "chmod +x node_modules/node-pty/prebuilds/darwin-*/spawn-helper 2>/dev/null || true",
+    "postinstall": "node scripts/postinstall.cjs",
     "test:security": "npm test",
     "test:legacy": "./tests/run-all-tests.sh"
   },
