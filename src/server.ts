@@ -647,6 +647,8 @@ export class AgentumServer {
       const session = this.sessionManager.createSession({
         name: message.name || message.command,
         command: message.command,
+        preset: message.preset,
+        cwd: message.cwd,
         cols: message.cols,
         rows: message.rows,
       });
@@ -667,6 +669,7 @@ export class AgentumServer {
       this.sendToClient(clientId, {
         type: MessageType.SESSION_CREATED,
         sessionId: session.id,
+        preset: session.preset,
         timestamp: Date.now(),
       });
 
@@ -699,10 +702,7 @@ export class AgentumServer {
 
     } catch (error) {
       console.error('Error creating session:', error);
-      this.sendError(
-        clientId,
-        `Failed to create session: ${(error as Error).message}`
-      );
+      this.sendToClient(clientId, { type: MessageType.ERROR, error: `Failed to create session: ${(error as Error).message}`, preset: message.preset, timestamp: Date.now() });
     }
   }
 

@@ -173,6 +173,8 @@ export interface AttachMessage extends BaseMessage {
 export interface CreateSessionMessage extends BaseMessage {
   type: MessageType.CREATE_SESSION;
   command: string;
+  preset?: 'cline';
+  cwd?: string;
   name?: string;
   cols?: number;
   rows?: number;
@@ -255,6 +257,8 @@ export interface SessionInfo {
   id: string;
   name: string;
   command: string;
+  preset?: 'cline';
+  cwd?: string;
   state: SessionState;
   createdAt: number;
   pid?: number;
@@ -270,6 +274,7 @@ export interface SessionConfig {
   id?: string;
   name: string;
   command: string;
+  preset?: 'cline';
   args?: string[];
   cwd?: string;
   env?: Record<string, string>;
@@ -300,6 +305,8 @@ export interface Session {
   id: string;
   name: string;
   command: string;
+  preset?: 'cline';
+  cwd?: string;
   args: string[];
   state: SessionState;
   createdAt: number;
