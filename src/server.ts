@@ -4,6 +4,7 @@
  */
 
 import { WebSocketServer, WebSocket } from 'ws';
+import { desktopUnavailableReason } from './desktop-support';
 import * as fs from 'fs';
 import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
@@ -142,8 +143,10 @@ export class AgentumServer {
             `Agentum WebSocket server listening on ${this.config.host}:${this.config.port}`
           );
 
-          // Start VNC server if enabled
-          if (this.config.enableVnc) {
+          // WSLg exposes Linux app surfaces, not the host Windows desktop.
+          const desktopWarning = this.config.enableVnc ? desktopUnavailableReason() : undefined;
+          if (desktopWarning) console.warn(desktopWarning);
+          if (this.config.enableVnc && !desktopWarning) {
             try {
               this.vncServer = await createVNCServer(this.config.vncPort, this.config.host);
               console.log(

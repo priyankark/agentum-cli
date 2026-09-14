@@ -12,7 +12,7 @@ import { createServer, AgentumServer } from './server';
 import { MessageType, SessionInfo, SessionState } from './types';
 import { captureScreenshot, sendNotification } from './services';
 
-const VERSION = '1.0.0';
+const VERSION: string = require('../package.json').version;
 const DEFAULT_PORT = 11042;
 const DEFAULT_VNC_PORT = 11043;
 

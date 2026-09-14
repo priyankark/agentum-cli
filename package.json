@@ -1,6 +1,6 @@
 {
   "name": "agentum",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Mirror terminal sessions and AI coding agents to mobile over WebSocket",
   "main": "dist/index.js",
   "bin": {
@@ -13,7 +13,9 @@
     "clean": "rm -rf dist",
     "test": "./tests/run-all-tests.sh",
     "prepublishOnly": "npm run build",
-    "postinstall": "chmod +x node_modules/node-pty/prebuilds/darwin-*/spawn-helper 2>/dev/null || true"
+    "postinstall": "node scripts/postinstall.cjs",
+    "test:platform": "npm run build && node --test tests/platform.test.cjs",
+    "test:package": "node scripts/verify-package-install.cjs"
   },
   "keywords": [
     "vibe-coding",
