@@ -187,3 +187,11 @@ ifconfig | grep "inet "
 
 - [Repository](https://github.com/priyankark/agentum-cli)
 - [AirCodum](https://aircodum.com)
+
+## Windows and WSL desktop setup
+
+Install normally with `npm install -g agentum`; Windows no longer needs `--ignore-scripts`. The platform-aware install step repairs node-pty’s helper only on macOS.
+
+Run `ag start` from Windows PowerShell on the Windows computer or VM whose desktop you want to see. WSL/WSLg exposes Linux app windows rather than the host Windows desktop, so Agentum detects WSL, prints setup guidance and leaves desktop sharing off instead of showing a misleading black screen. Terminal sessions continue to work. To keep working inside WSL while viewing Windows, start Agentum on Windows and create a terminal session running `wsl.exe`.
+
+This 1.0.3 maintenance release preserves the existing app connection protocol. It does not require the newer paired app/server release.
