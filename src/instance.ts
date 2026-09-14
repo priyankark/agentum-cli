@@ -42,8 +42,8 @@ export function pairingPayload(host: string, port: number, vncPort: number | und
     token: getAuthToken(), instanceId: instance.id, instanceName: instance.name };
 }
 
-export function capabilities(instance: InstanceIdentity, vncPort?: number) {
-  return { type: 'server_capabilities', protocolVersion: 1, instanceId: instance.id, instanceName: instance.name, vncPort,
+export function capabilities(instance: InstanceIdentity, vncPort?: number, channel: 'terminal' | 'desktop' = 'terminal') {
+  return { type: 'server_capabilities', protocolVersion: 1, channel, instanceId: instance.id, instanceName: instance.name, vncPort,
     features: { agents: ['claude', 'copilot', 'codex'], pty: true, vnc: vncPort !== undefined,
       vncSharedPort: false, vncPort, vncStreamControl: true, vncTextInput: true,
       vncScroll: true, vncRightClick: true, vncMouseButtons: true, vncInputReset: true } };

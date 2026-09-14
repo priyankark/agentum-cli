@@ -8,6 +8,7 @@ The first message on **both** terminal and desktop sockets is:
 {
   "type": "server_capabilities",
   "protocolVersion": 1,
+  "channel": "terminal",
   "instanceId": "persistent-id-for-terminal-port",
   "instanceName": "Work",
   "vncPort": 11043,
@@ -27,6 +28,8 @@ The first message on **both** terminal and desktop sockets is:
 }
 ```
 
+The desktop listener sends `channel: "desktop"` with the same instance ID. Clients verify the channel as well as identity, preventing a terminal-port/desktop-port mixup from appearing connected. The initial terminal hello waits until desktop startup succeeds or fails.
+
 The desktop port is advertised only if its listener started. Capability announcements describe protocol support, not installed/authenticated AI executables. Both listeners answer JSON `ping` with `pong`; transport pings detect dead sockets. Identity is saved per terminal port, retained across restarts and name changes. The default desktop port is terminal port + 1; `--vnc-port` overrides it. TLS proxies may require an explicit external desktop port in the app.
 
 Desktop starts only after `vnc_start`. `vnc_stop`, disconnect, or `vnc_input_reset` releases that connection’s held mouse buttons without moving the cursor backward. Input sent after stopping is rejected. One phone cannot interrupt another phone’s held drag in the same server process. Multiple processes share the OS desktop; simultaneous gestures across separate processes are not isolated virtual desktops.
@@ -39,3 +42,7 @@ Desktop starts only after `vnc_start`. `vnc_stop`, disconnect, or `vnc_input_res
 `ag pair` generates JSON locally: `{type:"agentum-pairing",version:1,host,port,vncPort,tls,token,instanceId,instanceName}`. QR is additive to manual entry. Credentials are never placed in a hosted QR service or connection URL.
 
 Run `npm test` on Node 22+ for authentication, real socket identity/port/reconnect/control tests, capture scheduling and native keyboard/encoding contracts. Native device validation of the previous hardening baseline is historical in `NATIVE_VALIDATION.md`; it is not evidence that this new release passed device testing.
+
+## Desktop platform scope
+
+Screen capture and input drivers have implementations for macOS, Windows and Linux. Scroll conversion has automated platform contract coverage. Native validation recorded so far is macOS desktop only; Windows/Linux native permissions, capture backends and wheel behavior must be validated on those systems before claiming equivalent tested support. On Linux, capture/input depends on the available desktop/display backend; a Wayland-only environment may require backend-specific support.

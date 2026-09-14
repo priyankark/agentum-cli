@@ -59,6 +59,7 @@ test('two terminal/VNC pairs advertise matching independent identities and answe
       const main = await connect(details.port), desktop = await connect(details.vncPort);
       assert.equal(main.received[0].type, 'server_capabilities', 'identity hello must precede session data');
       for (const socket of [main, desktop]) {
+        assert.equal(socket.received[0].channel, socket === main ? 'terminal' : 'desktop');
         assert.equal(socket.received[0].instanceId, details.instance.id);
         assert.equal(socket.received[0].instanceName, details.instance.name);
         assert.equal(socket.received[0].vncPort, details.vncPort);
@@ -102,4 +103,26 @@ test('authenticated terminal session executes quoted input and reports its outpu
     const output = client.received.filter(message => message.type === 'output').map(message => message.data).join('');
     assert.match(output, /agentum quoted output/);
   } finally { await server.shutdown(); }
+});
+
+test('terminal hello waits for desktop startup and reports final availability before sessions', { timeout: 5000 }, async () => {
+  const vncModule = require('../dist/vnc/vnc-server');
+  const original = vncModule.createVNCServer;
+  let release;
+  vncModule.createVNCServer = (...args) => new Promise((resolve, reject) => {
+    release = () => original(...args).then(resolve, reject);
+  });
+  const server = new AgentumServer({ port: 0, vncPort: 0, host: '127.0.0.1' });
+  try {
+    const started = server.start();
+    await once(server.wss, 'listening');
+    const socket = await connect(server.getConnectionDetails().port);
+    assert.deepEqual(socket.received, [], 'no premature false-VNC hello or session lists');
+    const firstMessage = once(socket, 'message'); release(); await started;
+    const hello = JSON.parse((await firstMessage)[0]);
+    assert.equal(hello.type, 'server_capabilities');
+    assert.equal(hello.channel, 'terminal');
+    assert.equal(hello.features.vnc, true);
+    assert.equal(hello.vncPort, server.getConnectionDetails().vncPort);
+  } finally { vncModule.createVNCServer = original; await server.shutdown(); }
 });

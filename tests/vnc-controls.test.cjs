@@ -37,7 +37,7 @@ test('actual VNC socket controls scale points, scroll, right-click and cancel sa
   try {
     const a = await connect(server), b = await connect(server);
     const hello = a.messages[0];
-    assert.equal(hello.instanceId, 'computer-a'); assert.equal(hello.vncPort, server.getPort());
+    assert.equal(hello.channel, 'desktop'); assert.equal(hello.instanceId, 'computer-a'); assert.equal(hello.vncPort, server.getPort());
     assert.equal(hello.features.vncScroll, true); assert.equal(hello.features.vncRightClick, true);
     assert.equal(hello.features.vncInputReset, true);
     await barrier(a, [pointer]); assert.equal(events.length, 0, 'input before desktop starts must not reach the OS');
@@ -71,4 +71,21 @@ test('wheel units match AirCodum across desktop platforms', () => {
   assert.equal(input.nativeScrollDelta(-2, 'darwin'), -24);
   assert.equal(input.nativeScrollDelta(2, 'win32'), 240);
   assert.equal(input.nativeScrollDelta(2, 'linux'), 2);
+});
+
+
+test('VNC heartbeat independently disconnects a silent client and releases its drag', { timeout: 5000 }, async t => {
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  const server = new VNCServer(0, '127.0.0.1', { id: 'heartbeat-test', name: 'Heartbeat' });
+  await server.start();
+  try {
+    const socket = new WebSocket(`ws://127.0.0.1:${server.getPort()}`, { autoPong: false, headers: { Authorization: 'Bearer ' + process.env.AGENTUM_AUTH_TOKEN } });
+    await once(socket, 'open');
+    await start(socket); await barrier(socket, [{ ...pointer, eventType: 'down' }]);
+    assert.deepEqual(events.at(-1), ['button', 'down', 'left']);
+    const ping = once(socket, 'ping'); t.mock.timers.tick(15000); await ping;
+    const closed = once(socket, 'close'); t.mock.timers.tick(15000); await closed;
+    assert.deepEqual(events.at(-1), ['button', 'up', 'left']);
+    assert.equal(server.getClientCount(), 0);
+  } finally { await server.shutdown(); }
 });

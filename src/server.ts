@@ -55,6 +55,7 @@ export class AgentumServer {
   private config: Required<ServerConfig>;
   private instance!: InstanceIdentity;
   private isShuttingDown = false;
+  private ready = false;
   private mediaDir: string;
   private creationTimes: number[] = [];
   private creationBudget(): boolean {
@@ -164,7 +165,6 @@ export class AgentumServer {
             if (this.config.enableVnc) {
               try {
                 this.vncServer = await createVNCServer(this.config.vncPort, this.config.host, this.instance);
-                for (const client of this.clients.values()) this.sendCapabilities(client.socket);
                 console.log(
                   `VNC WebSocket server listening on ${this.config.host}:${this.config.vncPort}`
                 );
@@ -173,6 +173,9 @@ export class AgentumServer {
                 // Don't fail the main server if VNC fails
               }
             }
+
+            this.ready = true;
+            for (const clientId of this.clients.keys()) this.sendInitialState(clientId);
 
             // Start heartbeat interval
             this.startHeartbeat();
@@ -234,9 +237,13 @@ export class AgentumServer {
       }
     });
 
-    this.sendCapabilities(socket);
+    this.sendInitialState(clientId);
+  }
 
-    // Send initial session lists
+  private sendInitialState(clientId: string): void {
+    const client = this.clients.get(clientId);
+    if (!this.ready || !client) return;
+    this.sendCapabilities(client.socket);
     this.sendSessionList(clientId);
     this.sendClaudeSessionList(clientId);
     this.sendCodexSessionList(clientId);

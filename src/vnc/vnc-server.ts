@@ -314,7 +314,7 @@ export class VNCServer {
 
     console.log(`[VNC] Client connected: ${clientId} from ${remoteAddress}`);
 
-    socket.send(JSON.stringify(capabilities(this.instance!, this.port)));
+    socket.send(JSON.stringify(capabilities(this.instance!, this.port, 'desktop')));
 
     // Create client state
     const state: VNCClientState = {
