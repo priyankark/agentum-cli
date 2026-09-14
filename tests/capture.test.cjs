@@ -2,9 +2,10 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const Module = require('node:module');
 const originalLoad = Module._load;
-let captures = 0, frames = [], value = 1, fail = false;
-const screenshot = async () => { captures++; if (fail) { fail = false; throw Error('capture'); } const frame = Buffer.alloc(4096); frame[1] = value; return frame; };
-const native = { getScreenSize: () => ({ width: 1440, height: 900 }) };
+let captures = 0, frames = [], value = 1, fail = false, deferredCapture = null;
+let screenSize = { width: 1440, height: 900 };
+const screenshot = async () => { captures++; if (deferredCapture) return new Promise(resolve => { deferredCapture.resolve = resolve; }); if (fail) { fail = false; throw Error('capture'); } const frame = Buffer.alloc(4096); frame[1] = value; return frame; };
+const native = { getScreenSize: () => screenSize };
 const createImage = async () => ({ width: 1440, height: 900, resize() {}, getBuffer: async () => Buffer.from('jpeg') });
 Module._load = function(name, ...args) {
   if (name === 'screenshot-desktop') return screenshot;
@@ -41,4 +42,23 @@ test('capture sends immediately, detects small edits, recovers from errors and c
   assert.equal(captures, count + 1, 'restart starts exactly one loop');
   stopAgain();
   manager.shutdown?.();
+});
+
+
+test('switching subscriptions during a slow capture drops old frames and adapts changed desktop dimensions', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'], now: 20000 });
+  const manager = ScreenCaptureManager.getInstance();
+  const old = [], current = [];
+  deferredCapture = {};
+  const stopOld = manager.subscribe(frame => old.push(frame));
+  const pending = deferredCapture;
+  stopOld();
+  const stopCurrent = manager.subscribe((frame, dimensions) => current.push(dimensions));
+  deferredCapture = null;
+  pending.resolve(Buffer.alloc(4096)); await settle();
+  assert.equal(old.length, 0); assert.equal(current.length, 0, 'old capture must not appear in the new connection');
+  screenSize = { width: 1280, height: 720 };
+  t.mock.timers.tick(20); await settle();
+  assert.deepEqual(current, [{ width: 1280, height: 720 }]);
+  stopCurrent(); manager.shutdown();
 });

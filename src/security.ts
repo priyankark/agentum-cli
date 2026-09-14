@@ -28,9 +28,16 @@ export function messageBudget() {
 
 export function validMouse(data: any): boolean {
   return data && ['down', 'up', 'move'].includes(data.eventType) &&
+    (data.button === undefined || ['left', 'right', 'middle'].includes(data.button)) &&
     [data.x, data.y, data.screenWidth, data.screenHeight].every(Number.isFinite) &&
     data.screenWidth > 0 && data.screenHeight > 0 && data.x >= 0 && data.y >= 0 &&
     data.x <= data.screenWidth && data.y <= data.screenHeight;
+}
+
+export function validScroll(data: any): boolean {
+  return validMouse({ ...data, eventType: 'move' }) &&
+    [data.deltaX, data.deltaY].every(value => Number.isInteger(value) && Math.abs(value) <= 120) &&
+    (data.deltaX !== 0 || data.deltaY !== 0);
 }
 
 export function validKey(data: any): boolean {
@@ -41,10 +48,10 @@ export function validKey(data: any): boolean {
     modifiers.every((m: unknown) => typeof m === 'string' && ['command', 'control', 'alt', 'shift'].includes(m));
 }
 
-/** Plain WebSocket listeners may bind only to loopback or an encrypted Tailscale interface. */
+/** Bind only local/private interfaces. Remote Internet access uses a TLS proxy. */
 export function protectedBind(host: string): boolean {
-  if (host === 'localhost' || host === '::1') return true;
-  if (/^fd7a:115c:a1e0:/i.test(host) && require('net').isIP(host) === 6) return true;
+  if (host === 'localhost' || host === '::1' || host === '0.0.0.0' || host === '::') return true;
+  if (/^f[cd][0-9a-f]{2}:/i.test(host) && require('net').isIP(host) === 6) return true;
   const octets = host.split('.').map(Number);
-  return require('net').isIP(host) === 4 && (octets[0] === 127 || (octets[0] === 100 && octets[1] >= 64 && octets[1] <= 127));
+  return require('net').isIP(host) === 4 && (octets[0] === 127 || octets[0] === 10 || (octets[0] === 192 && octets[1] === 168) || (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) || (octets[0] === 100 && octets[1] >= 64 && octets[1] <= 127));
 }

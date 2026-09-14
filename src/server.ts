@@ -6,6 +6,7 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import * as fs from 'fs';
 import { getAuthToken, privateDir } from './auth';
+import { capabilities, getInstanceIdentity, InstanceIdentity } from './instance';
 import { protectedBind, authorized, MAX_PAYLOAD, messageBudget } from './security';
 import * as path from 'path';
 import { randomUUID as uuidv4 } from 'crypto';
@@ -33,7 +34,7 @@ import {
 } from './types';
 
 const DEFAULT_PORT = 11042;
-const DEFAULT_VNC_PORT = 11043;
+
 const DEFAULT_HEARTBEAT_INTERVAL = 30000;
 const DEFAULT_MAX_OUTPUT_BUFFER = 1000;
 
@@ -52,6 +53,7 @@ export class AgentumServer {
   private heartbeatInterval: NodeJS.Timeout | null = null;
   private cleanupInterval: NodeJS.Timeout | null = null;
   private config: Required<ServerConfig>;
+  private instance!: InstanceIdentity;
   private isShuttingDown = false;
   private mediaDir: string;
   private creationTimes: number[] = [];
@@ -64,13 +66,16 @@ export class AgentumServer {
   constructor(config: Partial<ServerConfig> = {}) {
     this.config = {
       port: config.port ?? DEFAULT_PORT,
-      host: config.allowRemoteConnections === false ? '127.0.0.1' : (config.host || '127.0.0.1'),
+      host: config.allowRemoteConnections === false ? '127.0.0.1' : (config.host || '0.0.0.0'),
       heartbeatInterval: config.heartbeatInterval || DEFAULT_HEARTBEAT_INTERVAL,
       maxOutputBuffer: config.maxOutputBuffer || DEFAULT_MAX_OUTPUT_BUFFER,
       allowRemoteConnections: config.allowRemoteConnections ?? true,
-      vncPort: config.vncPort || DEFAULT_VNC_PORT,
+      vncPort: config.vncPort ?? ((config.port ?? DEFAULT_PORT) === 0 ? 0 : (config.port ?? DEFAULT_PORT) + 1),
+      instanceName: config.instanceName ?? '',
       enableVnc: config.enableVnc ?? true,
     };
+
+    if (![this.config.port, this.config.vncPort].every(port => Number.isInteger(port) && port >= 0 && port <= 65535)) throw new Error('Ports must be between 1 and 65535');
 
     // Initialize PTY session manager with event handlers
     this.sessionManager = new SessionManager({
@@ -131,7 +136,7 @@ export class AgentumServer {
   start(): Promise<void> {
     return new Promise((resolve, reject) => {
       try {
-        if (!protectedBind(this.config.host)) throw new Error("Use localhost behind a TLS proxy, or bind to your Tailscale interface IP.");
+        if (!protectedBind(this.config.host)) throw new Error("Use a private Wi-Fi/Tailscale interface, or localhost behind a TLS proxy.");
         const token = getAuthToken();
         this.wss = new WebSocketServer({
           port: this.config.port,
@@ -148,31 +153,35 @@ export class AgentumServer {
         });
 
         this.wss.on('listening', async () => {
-          console.log(
-            `Agentum WebSocket server listening on ${this.config.host}:${this.config.port}`
-          );
+          try {
+            this.config.port = (this.wss!.address() as import('net').AddressInfo).port;
+            this.instance = getInstanceIdentity(this.config.port, this.config.instanceName || undefined);
+            console.log(
+              `Agentum WebSocket server listening on ${this.config.host}:${this.config.port}`
+            );
 
-          // Start VNC server if enabled
-          if (this.config.enableVnc) {
-            try {
-              this.vncServer = await createVNCServer(this.config.vncPort, this.config.host);
-              for (const client of this.clients.values()) this.sendCapabilities(client.socket);
-              console.log(
-                `VNC WebSocket server listening on ${this.config.host}:${this.config.vncPort}`
-              );
-            } catch (error) {
-              console.error(`Failed to start VNC server: ${(error as Error).message}`);
-              // Don't fail the main server if VNC fails
+            // Start VNC server if enabled
+            if (this.config.enableVnc) {
+              try {
+                this.vncServer = await createVNCServer(this.config.vncPort, this.config.host, this.instance);
+                for (const client of this.clients.values()) this.sendCapabilities(client.socket);
+                console.log(
+                  `VNC WebSocket server listening on ${this.config.host}:${this.config.vncPort}`
+                );
+              } catch (error) {
+                console.error(`Failed to start VNC server: ${(error as Error).message}`);
+                // Don't fail the main server if VNC fails
+              }
             }
-          }
 
-          // Start heartbeat interval
-          this.startHeartbeat();
+            // Start heartbeat interval
+            this.startHeartbeat();
 
-          // Start cleanup interval for old sessions
-          this.startCleanupInterval();
+            // Start cleanup interval for old sessions
+            this.startCleanupInterval();
 
-          resolve();
+            resolve();
+          } catch (error) { await this.shutdown(); reject(error); }
         });
       } catch (error) {
         reject(error);
@@ -234,12 +243,11 @@ export class AgentumServer {
     this.sendCopilotSessionList(clientId);
   }
 
+  public getConnectionDetails() { return { port: this.config.port, vncPort: this.vncServer?.getPort(), instance: this.instance }; }
+
   private sendCapabilities(socket: WebSocket): void {
     if (socket.readyState !== WebSocket.OPEN) return;
-    socket.send(JSON.stringify({ type: 'server_capabilities', protocolVersion: 1,
-      features: { agents: ['claude', 'copilot', 'codex'], pty: true,
-        vnc: !!this.vncServer, vncSharedPort: false, vncPort: this.vncServer?.getPort(),
-        vncStreamControl: true, vncTextInput: true } }));
+    socket.send(JSON.stringify(capabilities(this.instance, this.vncServer?.getPort())));
   }
 
   /**

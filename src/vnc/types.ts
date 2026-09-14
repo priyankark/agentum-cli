@@ -32,6 +32,7 @@ export interface VNCMouseEvent {
   x: number;
   y: number;
   eventType: VNCMouseEventType;
+  button?: 'left' | 'right' | 'middle';
   screenWidth: number;
   screenHeight: number;
   timestamp: number;
@@ -122,7 +123,17 @@ export interface VNCErrorMessage {
 /**
  * Union type for all VNC messages from client
  */
+export interface VNCScrollEvent extends Omit<VNCMouseEvent, 'type' | 'eventType'> {
+  type: 'vnc_scroll' | 'vnc_scroll_event';
+  deltaX: number;
+  deltaY: number;
+}
+export interface VNCInputReset { type: 'vnc_input_reset'; }
+
 export type VNCClientMessage =
+  | VNCScrollEvent
+  | VNCInputReset
+  | { type: 'ping' }
   | VNCMouseEvent
   | VNCKeyboardEvent
   | VNCTypeEvent

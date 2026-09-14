@@ -6,9 +6,10 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import { randomUUID as uuidv4 } from 'crypto';
 import { getAuthToken } from '../auth';
-import { protectedBind, authorized, messageBudget, validKey, validMouse } from '../security';
+import { capabilities, getInstanceIdentity, InstanceIdentity } from '../instance';
+import { protectedBind, authorized, messageBudget, validKey, validMouse, validScroll } from '../security';
 import { ScreenCaptureManager } from './screen-capture';
-import { handleMouseEvent, handleKeyboardEvent, getScreenSize, typeString } from './input-handler';
+import { handleMouseEvent, handleKeyboardEvent, getScreenSize, typeString, handleScrollEvent, releaseMouseButton } from './input-handler';
 import type {
   VNCClientMessage,
   VNCMouseEvent,
@@ -19,6 +20,8 @@ import type {
 } from './types';
 
 const DEFAULT_VNC_PORT = 11043;
+// One physical pointer per process: another client cannot interrupt a held drag.
+let pointerOwner: string | null = null;
 
 /**
  * Per-connection handler for VNC clients
@@ -26,7 +29,8 @@ const DEFAULT_VNC_PORT = 11043;
 class VNCConnection {
   private unsubscribe: (() => void) | null = null;
   private isStreaming = false;
-  private heldMouse: VNCMouseEvent | null = null;
+  private heldButtons = new Set<'left' | 'right' | 'middle'>();
+  private disposed = false;
 
   constructor(
     private ws: WebSocket,
@@ -42,6 +46,7 @@ class VNCConnection {
   private setupWebSocketHandlers(): void {
     const budget = messageBudget();
     this.ws.on('message', async (message: Buffer | string) => {
+      if (this.disposed || this.ws.readyState !== WebSocket.OPEN) return;
       if (!budget(Buffer.byteLength(message))) { this.ws.close(1008, 'Message limit exceeded'); return; }
       await this.handleMessage(message);
     });
@@ -64,7 +69,13 @@ class VNCConnection {
       const messageData = rawMessage.toString();
       const message: VNCClientMessage = JSON.parse(messageData);
 
+      if (pointerOwner && pointerOwner !== this.clientId && ['vnc_mouse_event', 'vnc_scroll', 'vnc_scroll_event'].includes(message.type)) { this.sendError('Another phone is dragging. Try again when it finishes.'); return; }
+      if (['vnc_mouse_event', 'vnc_scroll', 'vnc_scroll_event', 'vnc_keyboard_event', 'vnc_type'].includes(message.type) && !this.isStreaming) throw new Error('Start desktop streaming before sending input');
+
       switch (message.type) {
+        case 'ping':
+          this.send({ type: 'pong', timestamp: Date.now() });
+          break;
         case 'vnc_start':
           this.startStreaming();
           break;
@@ -75,9 +86,20 @@ class VNCConnection {
 
         case 'vnc_mouse_event':
           if (!validMouse(message)) throw new Error('Invalid mouse event');
+          if (message.eventType === 'up' && !this.heldButtons.has(message.button || 'left')) break;
           handleMouseEvent(message as VNCMouseEvent);
-          if (message.eventType === 'down') this.heldMouse = message;
-          if (message.eventType === 'up') this.heldMouse = null;
+          if (message.eventType === 'down') { this.heldButtons.add(message.button || 'left'); pointerOwner = this.clientId; }
+          if (message.eventType === 'up') { this.heldButtons.delete(message.button || 'left'); if (!this.heldButtons.size) pointerOwner = null; }
+          break;
+
+        case 'vnc_scroll':
+        case 'vnc_scroll_event':
+          if (!validScroll(message)) throw new Error('Invalid scroll event');
+          handleScrollEvent(message);
+          break;
+
+        case 'vnc_input_reset':
+          this.resetInput();
           break;
 
         case 'vnc_keyboard_event':
@@ -136,8 +158,7 @@ class VNCConnection {
    * Stop streaming frames to this client
    */
   private stopStreaming(): void {
-    if (this.heldMouse) handleMouseEvent({ ...this.heldMouse, eventType: 'up' });
-    this.heldMouse = null;
+    this.resetInput();
     if (!this.isStreaming) return;
 
     console.log(`[VNC] Client ${this.clientId} stopped streaming`);
@@ -206,7 +227,15 @@ class VNCConnection {
   /**
    * Cleanup resources
    */
+  private resetInput(): void {
+    for (const button of this.heldButtons) releaseMouseButton(button);
+    this.heldButtons.clear();
+    if (pointerOwner === this.clientId) pointerOwner = null;
+  }
+
   public dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
     this.stopStreaming();
     this.onDisconnect(this.clientId);
   }
@@ -222,8 +251,9 @@ export class VNCServer {
   private clientStates: Map<string, VNCClientState> = new Map();
   private port: number;
   private host: string;
+  private heartbeat: NodeJS.Timeout | null = null;
 
-  constructor(port: number = DEFAULT_VNC_PORT, host: string = '127.0.0.1') {
+  constructor(port: number = DEFAULT_VNC_PORT, host: string = '127.0.0.1', private instance?: InstanceIdentity) {
     this.port = port;
     this.host = host;
   }
@@ -234,7 +264,7 @@ export class VNCServer {
   public start(): Promise<void> {
     return new Promise((resolve, reject) => {
       try {
-        if (!protectedBind(this.host)) throw new Error("Use localhost behind a TLS proxy, or bind to your Tailscale interface IP.");
+        if (!protectedBind(this.host)) throw new Error("Use a private Wi-Fi/Tailscale interface, or localhost behind a TLS proxy.");
         const token = getAuthToken();
         this.wss = new WebSocketServer({
           port: this.port,
@@ -251,8 +281,20 @@ export class VNCServer {
         });
 
         this.wss.on('listening', () => {
-          console.log(`[VNC] Server listening on ${this.host}:${this.port}`);
-          resolve();
+          try {
+            this.port = (this.wss!.address() as import('net').AddressInfo).port;
+            this.instance ??= getInstanceIdentity(this.port);
+            this.heartbeat = setInterval(() => {
+              for (const socket of this.wss?.clients ?? []) {
+                const state = (socket as WebSocket & { alive?: boolean });
+                if (state.alive === false) { socket.terminate(); continue; }
+                state.alive = false; socket.ping();
+              }
+            }, 15000);
+            this.heartbeat.unref();
+            console.log(`[VNC] Server listening on ${this.host}:${this.port}`);
+            resolve();
+          } catch (error) { void this.shutdown().then(() => reject(error)); }
         });
       } catch (error) {
         reject(error);
@@ -271,6 +313,8 @@ export class VNCServer {
     const remoteAddress = request.socket.remoteAddress || 'unknown';
 
     console.log(`[VNC] Client connected: ${clientId} from ${remoteAddress}`);
+
+    socket.send(JSON.stringify(capabilities(this.instance!, this.port)));
 
     // Create client state
     const state: VNCClientState = {
@@ -291,6 +335,7 @@ export class VNCServer {
 
     // Handle pong for health check
     socket.on('pong', () => {
+      (socket as WebSocket & { alive?: boolean }).alive = true;
       const clientState = this.clientStates.get(clientId);
       if (clientState) {
         clientState.lastActivity = Date.now();
@@ -340,9 +385,9 @@ export class VNCServer {
    */
   public async shutdown(): Promise<void> {
     console.log('[VNC] Shutting down server...');
+    if (this.heartbeat) { clearInterval(this.heartbeat); this.heartbeat = null; }
 
-    // Shutdown screen capture manager
-    ScreenCaptureManager.getInstance().shutdown();
+
 
     // Close all client connections
     for (const [clientId, connection] of this.clients.entries()) {
@@ -374,9 +419,10 @@ export class VNCServer {
  */
 export async function createVNCServer(
   port: number = DEFAULT_VNC_PORT,
-  host: string = '127.0.0.1'
+  host: string = '127.0.0.1',
+  instance?: InstanceIdentity
 ): Promise<VNCServer> {
-  const server = new VNCServer(port, host);
+  const server = new VNCServer(port, host, instance);
   await server.start();
   return server;
 }

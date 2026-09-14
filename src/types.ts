@@ -316,6 +316,7 @@ export interface Session {
  * Server configuration
  */
 export interface ServerConfig {
+  instanceName?: string;
   port: number;
   host?: string;
   heartbeatInterval?: number;

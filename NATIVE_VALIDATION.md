@@ -1,3 +1,5 @@
+> Historical validation of the September 7 hardening baseline. The 2.0.0 desktop/multiple-instance release needs its own Android and iOS device validation; these results do not certify that release.
+
 # Native validation — September 7, 2026
 
 The initial PRs had unit/integration tests and JavaScript exports, but no native E2E run. The Android testing below was performed after that omission was raised. All three PRs remain drafts pending the remaining release checks.

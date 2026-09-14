@@ -10,15 +10,38 @@ import { authHeaders, getAuthToken } from './auth';
 import chalk from 'chalk';
 import { WebSocket } from 'ws';
 import { createServer, AgentumServer } from './server';
+import { pairingPayload, connectionAddresses, getInstanceIdentity } from './instance';
 import { MessageType, SessionInfo, SessionState } from './types';
 import { captureScreenshot, sendNotification } from './services';
 
-const VERSION = '1.0.0';
+const VERSION: string = require('../package.json').version;
 const DEFAULT_PORT = 11042;
-const DEFAULT_VNC_PORT = 11043;
+
 
 const program = new Command();
 program.command('pairing-token').description('Print the private token to pair the mobile app').action(() => { console.log(getAuthToken()); });
+
+program.command('pair')
+  .description('Show a local QR code and manual connection details for your phone')
+  .option('--host <address>', 'This computer’s Wi-Fi or Tailscale address (TLS proxy hostname with --tls)')
+  .option('-p, --port <port>', 'Terminal port', String(DEFAULT_PORT))
+  .option('--vnc-port <port>', 'Desktop port (default: terminal port + 1)')
+  .option('--name <name>', 'Computer name shown on your phone')
+  .option('--instance-port <port>', 'Internal terminal port when a TLS proxy uses a different public port')
+  .option('--tls', 'Connect through your HTTPS/TLS proxy')
+  .option('--json', 'Print only the pairing JSON for local automation')
+  .action(async options => {
+    const port = Number(options.port);
+    const vncPort = options.vncPort ? Number(options.vncPort) : port + 1;
+    const host = options.host || connectionAddresses('0.0.0.0')[0];
+    if (!host) throw new Error('No Wi-Fi or Tailscale address found. Connect to your network, then run ag pair --host <address>.');
+    const payload = pairingPayload(host, port, vncPort, getInstanceIdentity(options.instancePort ? Number(options.instancePort) : port, options.name), !!options.tls);
+    if (options.json) { console.log(JSON.stringify(payload)); return; }
+    const qr = require('qrcode');
+    console.log(await qr.toString(JSON.stringify(payload), { type: 'terminal', small: true }));
+    console.log(`Scan in Agentum → Add computer → Scan QR code`);
+    console.log(`Name: ${payload.instanceName}\nHost: ${payload.host}\nTerminal port: ${payload.port}\nDesktop port: ${payload.vncPort}\nTLS: ${payload.tls ? 'on' : 'off'}\nPairing key: ${payload.token}`);
+  });
 
 /**
  * Format session state with color
@@ -67,7 +90,7 @@ function formatDuration(startTime: number): string {
 /**
  * Server command - Start the WebSocket server
  */
-async function serverCommand(options: { port: number; host?: string; vncPort?: number; noVnc?: boolean }): Promise<void> {
+async function serverCommand(options: { port: number; host?: string; vncPort?: number; noVnc?: boolean; name?: string }): Promise<void> {
   console.log(chalk.blue.bold('AirCodum-Agentum Server'));
   console.log(chalk.gray('─'.repeat(40)));
 
@@ -76,16 +99,23 @@ async function serverCommand(options: { port: number; host?: string; vncPort?: n
   try {
     server = await createServer({
       port: options.port,
-      host: options.host || '127.0.0.1',
-      vncPort: options.vncPort || DEFAULT_VNC_PORT,
+      host: options.host || '0.0.0.0',
+      vncPort: options.vncPort,
+      instanceName: options.name,
       enableVnc: !options.noVnc,
     });
 
-    console.log(chalk.green(`Terminal server started on port ${options.port}`));
-    console.log(chalk.gray(`Connect from mobile: ws://<your-ip>:${options.port}`));
-    if (!options.noVnc) {
-      console.log(chalk.green(`VNC server started on port ${options.vncPort || DEFAULT_VNC_PORT}`));
-      console.log(chalk.gray(`VNC connection: ws://<your-ip>:${options.vncPort || DEFAULT_VNC_PORT}`));
+    const details = server.getConnectionDetails();
+    console.log(chalk.green(`${details.instance.name} is ready`));
+    console.log(`Terminal port: ${details.port}`);
+    console.log(`Desktop controls this computer’s foreground screen; terminal sessions belong to this instance.`);
+    console.log(`Desktop port: ${details.vncPort ?? 'disabled'}`);
+    for (const address of connectionAddresses(options.host || '0.0.0.0')) {
+      if (address.startsWith('127.') || address === 'localhost' || address === '::1') {
+        console.log('For phone access on Wi-Fi: ag start --host 0.0.0.0');
+      } else {
+        console.log(`Pair your phone: ag pair --host ${address} --port ${details.port}${details.vncPort ? ` --vnc-port ${details.vncPort}` : ''}`);
+      }
     }
     console.log(chalk.gray('Press Ctrl+C to stop'));
     console.log();
@@ -521,14 +551,16 @@ program
   .command('start')
   .description('Start the Agentum server')
   .option('-p, --port <port>', 'WebSocket server port', String(DEFAULT_PORT))
-  .option('--vnc-port <port>', 'VNC server port', String(DEFAULT_VNC_PORT))
-  .option('-h, --host <host>', 'Host to bind to', '127.0.0.1')
+  .option('--vnc-port <port>', 'Desktop port (default: terminal port + 1)')
+  .option('--name <name>', 'Name shown on your phone')
+  .option('-h, --host <host>', 'Host to bind to', '0.0.0.0')
   .option('--no-vnc', 'Disable VNC server')
   .action(async (options) => {
     await serverCommand({
-      port: parseInt(options.port, 10),
+      port: Number(options.port),
       host: options.host,
-      vncPort: options.vncPort ? parseInt(options.vncPort, 10) : DEFAULT_VNC_PORT,
+      vncPort: options.vncPort ? Number(options.vncPort) : undefined,
+      name: options.name,
       noVnc: options.vnc === false,
     });
   });
@@ -537,14 +569,16 @@ program
   .command('server')
   .description('Start the WebSocket server for mobile connections')
   .option('-p, --port <port>', 'Port to listen on for terminal sessions', String(DEFAULT_PORT))
-  .option('-h, --host <host>', 'Host to bind to', '127.0.0.1')
-  .option('--vnc-port <port>', 'Port to listen on for VNC screen sharing', String(DEFAULT_VNC_PORT))
+  .option('-h, --host <host>', 'Host to bind to', '0.0.0.0')
+  .option('--vnc-port <port>', 'Desktop port (default: terminal port + 1)')
+  .option('--name <name>', 'Name shown on your phone')
   .option('--no-vnc', 'Disable VNC server')
   .action(async (options) => {
     await serverCommand({
-      port: parseInt(options.port, 10),
+      port: Number(options.port),
       host: options.host,
-      vncPort: options.vncPort ? parseInt(options.vncPort, 10) : DEFAULT_VNC_PORT,
+      vncPort: options.vncPort ? Number(options.vncPort) : undefined,
+      name: options.name,
       noVnc: options.vnc === false,
     });
   });
@@ -558,7 +592,7 @@ program
   .action((command, options) => {
     runCommand(command, {
       name: options.name,
-      port: parseInt(options.port, 10),
+      port: Number(options.port),
       detach: options.detach,
     });
   });
@@ -569,7 +603,7 @@ program
   .option('-p, --port <port>', 'Server port', String(DEFAULT_PORT))
   .action((options) => {
     listCommand({
-      port: parseInt(options.port, 10),
+      port: Number(options.port),
     });
   });
 
@@ -579,7 +613,7 @@ program
   .option('-p, --port <port>', 'Server port', String(DEFAULT_PORT))
   .action((sessionId, options) => {
     attachCommand(sessionId, {
-      port: parseInt(options.port, 10),
+      port: Number(options.port),
     });
   });
 
@@ -589,7 +623,7 @@ program
   .option('-p, --port <port>', 'Server port', String(DEFAULT_PORT))
   .action((sessionId, options) => {
     killCommand(sessionId, {
-      port: parseInt(options.port, 10),
+      port: Number(options.port),
     });
   });
 
@@ -631,7 +665,7 @@ program
         },
         {
           host: options.host,
-          port: parseInt(options.port, 10),
+          port: Number(options.port),
         }
       );
     } catch (err) {
@@ -641,4 +675,7 @@ program
   });
 
 // Parse arguments (use parseAsync for async actions)
-program.parseAsync();
+void program.parseAsync().catch(error => {
+  console.error(chalk.red(error instanceof Error ? error.message : String(error)));
+  process.exitCode = 1;
+});

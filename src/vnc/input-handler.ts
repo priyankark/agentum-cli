@@ -8,7 +8,7 @@
  * - Comprehensive error handling and logging
  */
 
-import type { VNCMouseEvent, VNCKeyboardEvent, ScreenDimensions } from './types';
+import type { VNCMouseEvent, VNCScrollEvent, VNCKeyboardEvent, ScreenDimensions } from './types';
 
 // Lazy load robotjs to avoid issues if not installed
 let robot: typeof import('@hurdlegroup/robotjs') | null = null;
@@ -162,10 +162,10 @@ export function handleMouseEvent(event: VNCMouseEvent): void {
     // Handle click events
     switch (event.eventType) {
       case 'down':
-        robot!.mouseToggle('down', 'left');
+        robot!.mouseToggle('down', event.button || 'left');
         break;
       case 'up':
-        robot!.mouseToggle('up', 'left');
+        robot!.mouseToggle('up', event.button || 'left');
         break;
       case 'move':
         // Already moved above
@@ -381,3 +381,19 @@ export default {
   keyToggle,
   isRobotAvailable,
 };
+
+/** Release without moving the pointer back to the original drag position. */
+export function releaseMouseButton(button: 'left' | 'right' | 'middle'): void {
+  if (!robot) return;
+  try { robot.mouseToggle('up', button); } catch { /* Best effort on driver teardown. */ }
+}
+
+export function nativeScrollDelta(ticks: number, platform: string = process.platform): number {
+  return ticks * (platform === 'win32' ? 120 : platform === 'darwin' ? 12 : 1);
+}
+
+export function handleScrollEvent(event: VNCScrollEvent): void {
+  if (!robot && !initializeRobot()) return;
+  handleMouseEvent({ ...event, type: 'vnc_mouse_event', eventType: 'move' });
+  robot!.scrollMouse(nativeScrollDelta(event.deltaX), nativeScrollDelta(event.deltaY));
+}

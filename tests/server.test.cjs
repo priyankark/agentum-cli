@@ -46,3 +46,60 @@ test('actual terminal and VNC listeners reject anonymous clients and shut down w
     await Promise.all(disconnected);
   } finally { await server.shutdown(); await vnc.shutdown(); fs.rmSync(inbox, { recursive: true, force: true }); }
 });
+
+test('two terminal/VNC pairs advertise matching independent identities and answer heartbeats', { timeout: 5000 }, async () => {
+  const one = new AgentumServer({ port: 0, vncPort: 0, host: '127.0.0.1', instanceName: 'Work' });
+  const two = new AgentumServer({ port: 0, vncPort: 0, host: '127.0.0.1', instanceName: 'Personal' });
+  try {
+    await one.start(); await two.start();
+    const first = one.getConnectionDetails(), second = two.getConnectionDetails();
+    assert.notEqual(first.port, second.port); assert.notEqual(first.vncPort, second.vncPort);
+    assert.notEqual(first.instance.id, second.instance.id);
+    for (const details of [first, second]) {
+      const main = await connect(details.port), desktop = await connect(details.vncPort);
+      assert.equal(main.received[0].type, 'server_capabilities', 'identity hello must precede session data');
+      for (const socket of [main, desktop]) {
+        assert.equal(socket.received[0].instanceId, details.instance.id);
+        assert.equal(socket.received[0].instanceName, details.instance.name);
+        assert.equal(socket.received[0].vncPort, details.vncPort);
+        assert.equal(socket.received[0].features.vnc, true);
+        const pong = new Promise(resolve => socket.on('message', data => { if (JSON.parse(data).type === 'pong') resolve(); }));
+        socket.send(JSON.stringify({ type: 'ping' })); await pong;
+      }
+    }
+    const third = new AgentumServer({ port: 12042, enableVnc: false });
+    assert.equal(third.config.vncPort, 12043, 'default desktop port follows terminal port');
+    assert.equal(third.config.host, '0.0.0.0', 'phone Wi-Fi must work without extra binding flags');
+    await third.shutdown();
+  } finally { await one.shutdown(); await two.shutdown(); }
+});
+
+test('occupied terminal or VNC ports reject startup promptly', { timeout: 5000 }, async () => {
+  const one = new AgentumServer({ port: 0, host: '127.0.0.1', enableVnc: false });
+  await one.start();
+  const two = new AgentumServer({ port: one.getConnectionDetails().port, host: '127.0.0.1', enableVnc: false });
+  const vnc = new VNCServer(one.getConnectionDetails().port, '127.0.0.1');
+  try {
+    await assert.rejects(two.start(), { code: 'EADDRINUSE' });
+    await assert.rejects(vnc.start(), { code: 'EADDRINUSE' });
+  } finally { await one.shutdown(); await two.shutdown(); await vnc.shutdown(); }
+});
+
+test('authenticated terminal session executes quoted input and reports its output and exit', { timeout: 5000 }, async () => {
+  const server = new AgentumServer({ port: 0, host: '127.0.0.1', enableVnc: false });
+  await server.start();
+  try {
+    const client = await connect(server.getConnectionDetails().port);
+    const ended = new Promise((resolve, reject) => client.on('message', data => {
+      const message = JSON.parse(data);
+      if (message.type === 'error') reject(new Error(message.error));
+      if (message.type === 'command_complete') resolve(message);
+    }));
+    client.send(JSON.stringify({ type: 'create_session', name: 'Socket regression', command: 'printf "agentum quoted output\\n"', cols: 80, rows: 24 }));
+    await ended;
+    const created = client.received.find(message => message.type === 'session_created');
+    assert.ok(created?.sessionId);
+    const output = client.received.filter(message => message.type === 'output').map(message => message.data).join('');
+    assert.match(output, /agentum quoted output/);
+  } finally { await server.shutdown(); }
+});

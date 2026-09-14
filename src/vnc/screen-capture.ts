@@ -61,7 +61,7 @@ export class ScreenCaptureManager {
   private constructor() {
     this.screenSize = getScreenSize();
     this.cachedDimensions = this.getScaledDimensions();
-    this.setupPerformanceMonitoring();
+
   }
 
   /**
@@ -103,6 +103,7 @@ export class ScreenCaptureManager {
    * Returns unsubscribe function
    */
   public subscribe(callback: FrameCallback): () => void {
+    if (!this.performanceMonitorInterval) this.setupPerformanceMonitoring();
     this.subscribers.push(callback);
     this.lastFrameHash = null;
 
@@ -143,6 +144,10 @@ export class ScreenCaptureManager {
       this.inFlight = true;
       const started = performance.now();
       try {
+        const screen = getScreenSize();
+        if (screen.width !== this.screenSize.width || screen.height !== this.screenSize.height) {
+          this.screenSize = screen; this.cachedDimensions = this.getScaledDimensions(); this.lastFrameHash = null;
+        }
         const raw = await capturePrimaryScreen();
         if (!active()) return;
         const hash = crypto.createHash('sha256').update(raw).digest('hex');
@@ -340,6 +345,7 @@ export class ScreenCaptureManager {
    */
   private stopCaptureLoop(): void {
     this.generation++;
+    if (this.performanceMonitorInterval) { clearInterval(this.performanceMonitorInterval); this.performanceMonitorInterval = null; }
     console.log('[VNC] Stopping screen capture loop');
 
     if (this.captureInterval) {

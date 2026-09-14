@@ -1,11 +1,16 @@
-# Automatic compatibility
+# Agentum connection and desktop protocol
 
-No rollout flags or manual feature switches are used. New servers send an additive `server_capabilities` WebSocket message **after authentication**, before initial session lists or VNC traffic. Existing protocol messages remain supported.
+Both WebSocket listeners require the same `Authorization: Bearer <key>` header. Native Android clients also set `Origin: aircodum://native`; absent Origin is accepted for Node clients. Other origins are rejected. No sessions, screen capture, or native input are exposed before authentication. The new app/server must be rolled out together: an old anonymous app cannot connect to this server, and authentication failure never falls back to anonymous access.
+
+The first message on **both** terminal and desktop sockets is:
 
 ```json
 {
   "type": "server_capabilities",
   "protocolVersion": 1,
+  "instanceId": "persistent-id-for-terminal-port",
+  "instanceName": "Work",
+  "vncPort": 11043,
   "features": {
     "agents": ["claude", "copilot", "codex"],
     "pty": true,
@@ -13,30 +18,24 @@ No rollout flags or manual feature switches are used. New servers send an additi
     "vncSharedPort": false,
     "vncPort": 11043,
     "vncStreamControl": true,
-    "vncTextInput": true
+    "vncTextInput": true,
+    "vncScroll": true,
+    "vncRightClick": true,
+    "vncMouseButtons": true,
+    "vncInputReset": true
   }
 }
 ```
 
-The extension advertises no agent/PTY support and `vncSharedPort: true`. Agentum advertises VNC only when its VNC listener starts successfully. Version 1's `vnc` capability includes pointer and special-key events; text insertion and start/stop support are separate flags. Missing flags default to disabled. Unsupported protocol versions enable no features. Capability announcements describe supported APIs, not whether external agent executables are installed or configured.
+The desktop port is advertised only if its listener started. Capability announcements describe protocol support, not installed/authenticated AI executables. Both listeners answer JSON `ping` with `pong`; transport pings detect dead sockets. Identity is saved per terminal port, retained across restarts and name changes. The default desktop port is terminal port + 1; `--vnc-port` overrides it. TLS proxies may require an explicit external desktop port in the app.
 
-The mobile app:
+Desktop starts only after `vnc_start`. `vnc_stop`, disconnect, or `vnc_input_reset` releases that connection’s held mouse buttons without moving the cursor backward. Input sent after stopping is rejected. One phone cannot interrupt another phone’s held drag in the same server process. Multiple processes share the OS desktop; simultaneous gestures across separate processes are not isolated virtual desktops.
 
-- Filters mode/provider tabs and text controls to supported features.
-- Uses the main port automatically for extension VNC. For separate listeners, an explicit advanced VNC port wins; otherwise a valid advertised port is used for direct private connections, or the existing next-port convention for TLS. A reverse proxy can still need an external-port override. The server cannot redirect the app to another host or downgrade TLS.
-- Identifies older Agentum providers from their unsolicited session lists and older extensions from their existing `screen-update` messages. No speculative session/capability requests are sent: old extensions can mistake unknown JSON for file uploads.
-- Reuses the main socket for an old extension's automatic stream and translates pointer/special-key messages to `mouse-event`/`keyboard-event`. It does not send unsupported start/stop/text commands. Those servers cannot provide on-demand capture or the new text composer until updated.
-- Allows an empty token for old servers on the already permitted transports. Supplying a token always sends it; a failed authenticated connection is never retried anonymously. Android HTTP 401/403 failures, including statuses in `close.reason`, stop retries and show a pairing prompt.
-- Re-detects features on every connection. Existing loopback/Tailscale connections without a saved TLS preference retain their permitted transport. Public/ordinary LAN plaintext addresses remain blocked.
+- `vnc_mouse_event`: existing `x`, `y`, `screenWidth`, `screenHeight`, `eventType: down|up|move`; optional `button: left|right|middle` defaults to left. Coordinates are finite and inside the supplied frame; the server scales/clamps to the physical desktop.
+- `vnc_scroll`: the same frame coordinates, plus integer `deltaX`/`deltaY` from −120 to 120; at least one nonzero. Units match AirCodum (macOS ×12, Windows ×120, Linux ×1). `vnc_scroll_event` is an accepted alias.
+- `vnc_keyboard_event` and `vnc_type` retain their existing schema. Text is limited to 4096 characters; shortcut modifier flags are released before later text.
+- `vnc_input_reset`: releases held buttons while leaving the stream active.
 
-## Compatibility boundary
+`ag pair` generates JSON locally: `{type:"agentum-pairing",version:1,host,port,vncPort,tls,token,instanceId,instanceName}`. QR is additive to manual entry. Credentials are never placed in a hosted QR service or connection URL.
 
-Automatic feature selection does not manufacture credentials for old mobile binaries. An old unauthenticated app remains rejected by a new authenticated server. Pairing and supported encrypted/private transport are still required for the secured stack. This change does not add an anonymous-access flag to either server or eliminate that one-time app/server migration requirement.
-
-## Validation
-
-The mobile unit suite covers modern/legacy/unknown announcements, disabled features, port selection, legacy wire mapping, empty-token headers and authentication-error classification. Server integration tests verify announcements occur on authenticated sockets and reflect the extension topology or disabled VNC listener.
-
-`tests/android-vnc-e2e.py` in mobile exercises the actual Agentum server and native macOS input from Android, including bad-token rejection followed by successful pairing and exact desktop text/newline assertions.
-
-`tests/android-compatibility-e2e.py` in mobile uses the native Android app with controlled protocol fixtures (`tests/compatibility-fixture.cjs`) for legacy extension, modern extension topology and partial Agentum capabilities. These fixtures expose no desktop/agent functionality; they test mobile routing/feature selection, not complete legacy backend behavior. iOS/full VS Code-host compatibility and old server native bugs remain outside this validation.
+Run `npm test` on Node 22+ for authentication, real socket identity/port/reconnect/control tests, capture scheduling and native keyboard/encoding contracts. Native device validation of the previous hardening baseline is historical in `NATIVE_VALIDATION.md`; it is not evidence that this new release passed device testing.
