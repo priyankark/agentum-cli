@@ -7,6 +7,7 @@ import * as pty from 'node-pty';
 import { randomUUID as uuidv4 } from 'crypto';
 import { accessSync, constants, statSync } from 'fs';
 import * as path from 'path';
+import { releaseExitedPty } from './pty-cleanup';
 import {
   Session,
   SessionConfig,
@@ -146,6 +147,8 @@ export class SessionManager {
       session.state = SessionState.COMPLETED;
       session.exitCode = exitCode;
       session.exitSignal = signal !== undefined ? String(signal) : undefined;
+
+      releaseExitedPty(ptyProcess);
 
       this.eventHandlers.onExit(sessionId, exitCode, session.exitSignal);
     });
