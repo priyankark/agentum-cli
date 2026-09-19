@@ -2,8 +2,8 @@
 
 This server requires the updated Agentum mobile app. Update the app before replacing an older anonymous server. The release candidate must remain opt-in until the matching mobile app is available.
 
-1. Run `ag start`. The authenticated listeners bind to all interfaces for direct same-Wi-Fi use. Terminal port defaults to 11042, desktop port to 11043.
-2. Run `ag pair` and scan the locally generated QR code in the app. Manual host, ports and pairing key are also printed. `ag pair --host <Wi-Fi-or-Tailscale-address>` selects another interface.
+1. Run `npx agentum@2 start` (or `ag start` after a global install) in a terminal on your computer and leave it running. The authenticated listeners bind to all interfaces for direct same-Wi-Fi use. Terminal port defaults to 11042, desktop port to 11043.
+2. Open a **second terminal tab or window** (⌘T in macOS Terminal) and run `npx agentum@2 pair` (or `ag pair`). The **QR code appears directly in this second terminal**, with the host, ports and pairing key underneath it. On your phone, open **Agentum → Add computer → Scan QR code** and scan your computer's screen, or enter the printed details manually. Installing the CLI alone does not start the server or display the QR code. `npx agentum@2 pair --host <Wi-Fi-or-Tailscale-address>` selects another interface.
 3. On the same trusted Wi-Fi, no Tailscale setup is required. For access from another network, use Tailscale on both devices, or a trusted TLS reverse proxy. Wi-Fi `ws` transport is unencrypted; use Tailscale/TLS when the network is not trusted. Do not expose these plain WebSocket ports directly to the Internet.
 4. A TLS proxy should forward WebSocket upgrades and the Authorization header. Bind the server to loopback with `ag start --host 127.0.0.1`, configure the proxy’s terminal/desktop routes, and pair with `ag pair --host <proxy-hostname> --port <external-terminal-port> --vnc-port <external-desktop-port> --tls`. When internal and external terminal ports differ, add `--instance-port <internal-terminal-port>` so the QR identifies the running instance.
 

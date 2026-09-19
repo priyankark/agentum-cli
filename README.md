@@ -39,38 +39,55 @@ Only install and authenticate the agents you plan to use.
 
 ## Quick Setup
 
-### 1. Install CLI on your desktop
+Use **AirCodum Agentum 1.1 or later** on your phone. Connect your phone and computer to the **same Wi-Fi** for initial setup.
+
+### 1. Start Agentum on your computer
+
+Open a terminal on your computer and run:
 
 ```bash
-npm install -g https://github.com/priyankark/agentum-cli/releases/download/v2.0.0/agentum-2.0.0.tgz
+npx agentum@2 start
 ```
 
-The GitHub release includes the built package. Agentum 2 requires AirCodum Agentum 1.1 or later. npm registry publication is pending publisher authentication; the unversioned npm package still installs the older server. Once version 2 is available on npm, `npm install -g agentum@2` is equivalent.
+If npm asks to install Agentum, enter `y`. No global installation is required. Run this from your project folder if you want new sessions to use that folder by default.
 
-### 2. Start the server
+**Leave this terminal running.** It shows your computer name, network addresses, and ports: **11042** for terminal sessions and **11043** for desktop sharing. The QR code appears in the next step.
+
+### 2. Display the QR code in a second terminal
+
+Open a **second terminal tab or window** on your computer (**⌘T** in macOS Terminal), then run:
 
 ```bash
-ag start
+npx agentum@2 pair
 ```
 
-The server shows your computer name, terminal/desktop ports, and available Wi-Fi or Tailscale addresses. The default terminal port is **11042**, and desktop sharing uses **11043**.
+**A QR code appears directly in this second terminal.** Your computer's host address, terminal port, desktop port, and pairing key are printed underneath it.
 
 ### 3. Pair your phone
 
-In another terminal run:
+On your phone, open **Agentum → Add computer → Scan QR code**. Point your phone's camera at the QR code displayed in your computer's second terminal.
+
+If scanning fails, enter the **host, terminal port, desktop port, and pairing key** printed below the QR code into the app manually. Keep the first terminal (`start`) running while you use Agentum.
+
+If you have several network adapters, choose the address your phone can reach (replace the example with your computer's Wi-Fi or Tailscale address):
 
 ```bash
-ag pair
-```
-
-In the updated Agentum app, add a computer and scan the QR code. You can also enter the host, ports, and pairing key printed below it. QR generation stays on your computer. If you have several network adapters, choose the address your phone can reach:
-
-```bash
-ag pair --host 192.168.1.10
-ag pair --host 100.89.59.102
+npx agentum@2 pair --host 192.168.1.10
 ```
 
 Phones on the same Wi-Fi connect directly; Tailscale is optional for access from other networks. Public remote access requires a trusted TLS reverse proxy. See [setup details](SECURITY_CHANGES.md).
+
+### Optional: install globally to use `ag`
+
+If you prefer the shorter `ag` command:
+
+```bash
+npm install -g agentum@2
+```
+
+Installation alone **does not start the server or display a QR code**. Run `ag start` in one terminal, leave it running, then run `ag pair` in a second terminal to display the QR code. Scan it in the phone app as described above.
+
+The examples below use `ag`. Without a global install, replace `ag` with `npx agentum@2` (for example, `npx agentum@2 list`).
 
 ### Multiple computers and instances
 
@@ -112,6 +129,16 @@ ag start --port 8080        # Custom port
 ag start --no-vnc           # Disable screen sharing
 ```
 
+### `ag pair`
+
+Display the QR code and manual connection details directly in your terminal. Keep the server running in another terminal while you pair your phone.
+
+```bash
+ag pair
+ag pair --host 192.168.1.10    # Choose this computer's reachable address
+ag pair --port 12042          # Match a server started with --port 12042
+```
+
 ### `ag run <command>`
 
 Run any command and mirror output to mobile.
@@ -134,22 +161,22 @@ Attach to a session locally. Press `Ctrl+]` to detach.
 
 Stop a session.
 
-### `agentum screenshot`
+### `ag screenshot`
 
 Capture screen to disk.
 
 ```bash
-agentum screenshot                # Saves to /tmp
-agentum screenshot -o ./shots     # Custom directory
+ag screenshot                # Saves to /tmp
+ag screenshot -o ./shots     # Custom directory
 ```
 
-### `agentum notify`
+### `ag notify`
 
 Push notification to phone.
 
 ```bash
-agentum notify -t "Done" -b "Build complete"
-agentum notify -t "Error" -b "Tests failed" -P high
+ag notify -t "Done" -b "Build complete"
+ag notify -t "Error" -b "Tests failed" -P high
 ```
 
 ---
@@ -184,6 +211,15 @@ Access from anywhere, not just your local network. Works through firewalls and N
 ---
 
 ## Troubleshooting
+
+**Where is the QR code?**
+Run `npx agentum@2 pair` (or `ag pair` after a global install) in a second terminal. The QR code is printed in that terminal, above the host, ports, and pairing key. Installing the package or running `start` does not display it.
+
+**QR code looks distorted or won't scan?**
+Widen the terminal and reduce its font size until the entire QR code fits without wrapping, then run `pair` again. Use a monospaced terminal font with normal line spacing so the code looks square. Scan using **Agentum → Add computer → Scan QR code**. If scanning still fails, enter the host, ports, and pairing key printed underneath the code manually in the app.
+
+**`pair` is an unknown command?**
+Check `ag --version`. Pairing requires Agentum 2 or later. Run `npm install -g agentum@2` to update, or use `npx agentum@2 pair` directly.
 
 **Port in use?**
 ```bash
