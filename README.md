@@ -53,26 +53,28 @@ If npm asks to install Agentum, enter `y`. No global installation is required. R
 
 **Leave this terminal running.** It shows your computer name, network addresses, and ports: **11042** for terminal sessions and **11043** for desktop sharing. The QR code appears in the next step.
 
-### 2. Display the QR code in a second terminal
+### 2. Open the pairing QR image
 
 Open a **second terminal tab or window** on your computer (**⌘T** in macOS Terminal), then run:
 
 ```bash
-npx agentum@2 pair
+npx agentum@2 pair --open
 ```
 
-**A QR code appears directly in this second terminal.** Your computer's host address, terminal port, desktop port, and pairing key are printed underneath it.
+**A square QR image opens in your computer's image viewer.** This avoids terminal fonts or line wrapping distorting the code. The image's file path and your host address, ports, and pairing key are also printed in the second terminal. This image option requires CLI **2.0.1 or later**.
+
+For a terminal QR instead, run `npx agentum@2 pair` without `--open`. The code appears directly in that second terminal, and a clean PNG image is saved as a fallback. If the terminal is too narrow, Agentum prints the image path instead of a wrapped QR code.
 
 ### 3. Pair your phone
 
-On your phone, open **Agentum → Add computer → Scan QR code**. Point your phone's camera at the QR code displayed in your computer's second terminal.
+On your phone, open **Agentum → Add computer → Scan QR code**. Point your phone's camera at the QR image opened on your computer.
 
-If scanning fails, enter the **host, terminal port, desktop port, and pairing key** printed below the QR code into the app manually. Keep the first terminal (`start`) running while you use Agentum.
+If scanning fails, enter the **host, terminal port, desktop port, and pairing key** printed in the second terminal into the app manually. Keep the first terminal (`start`) running while you use Agentum.
 
 If you have several network adapters, choose the address your phone can reach (replace the example with your computer's Wi-Fi or Tailscale address):
 
 ```bash
-npx agentum@2 pair --host 192.168.1.10
+npx agentum@2 pair --open --host 192.168.1.10
 ```
 
 Phones on the same Wi-Fi connect directly; Tailscale is optional for access from other networks. Public remote access requires a trusted TLS reverse proxy. See [setup details](SECURITY_CHANGES.md).
@@ -85,7 +87,7 @@ If you prefer the shorter `ag` command:
 npm install -g agentum@2
 ```
 
-Installation alone **does not start the server or display a QR code**. Run `ag start` in one terminal, leave it running, then run `ag pair` in a second terminal to display the QR code. Scan it in the phone app as described above.
+Installation alone **does not start the server or display a QR code**. Run `ag start` in one terminal, leave it running, then run `ag pair --open` in a second terminal to open the QR image. Scan it in the phone app as described above.
 
 The examples below use `ag`. Without a global install, replace `ag` with `npx agentum@2` (for example, `npx agentum@2 list`).
 
@@ -131,13 +133,16 @@ ag start --no-vnc           # Disable screen sharing
 
 ### `ag pair`
 
-Display the QR code and manual connection details directly in your terminal. Keep the server running in another terminal while you pair your phone.
+Open a clean QR image with `--open`, or display a terminal QR without it. Both modes save a PNG and print its file path alongside manual connection details. Keep the server running in another terminal while you pair your phone.
 
 ```bash
-ag pair
+ag pair --open                # Recommended: open a square QR image
+ag pair                       # Terminal QR plus saved PNG fallback
 ag pair --host 192.168.1.10    # Choose this computer's reachable address
 ag pair --port 12042          # Match a server started with --port 12042
 ```
+
+If there is no image viewer (for example, over SSH), open the printed image path on a computer with a display or enter the connection details manually. The image contains your pairing key; keep it private and delete it when you no longer need it. `ag pair --json` prints only the pairing JSON and does not create an image.
 
 ### `ag run <command>`
 
@@ -213,10 +218,10 @@ Access from anywhere, not just your local network. Works through firewalls and N
 ## Troubleshooting
 
 **Where is the QR code?**
-Run `npx agentum@2 pair` (or `ag pair` after a global install) in a second terminal. The QR code is printed in that terminal, above the host, ports, and pairing key. Installing the package or running `start` does not display it.
+Run `npx agentum@2 pair --open` (or `ag pair --open` after a global install) in a second terminal. A QR image opens in your computer's image viewer, and its path is printed in the terminal. Without `--open`, the QR appears directly in the terminal if it is wide enough. Installing the package or running `start` does not display it.
 
 **QR code looks distorted or won't scan?**
-Widen the terminal and reduce its font size until the entire QR code fits without wrapping, then run `pair` again. Use a monospaced terminal font with normal line spacing so the code looks square. Scan using **Agentum → Add computer → Scan QR code**. If scanning still fails, enter the host, ports, and pairing key printed underneath the code manually in the app.
+Run `npx agentum@2 pair --open` to scan a square PNG image unaffected by terminal formatting. You can also open the file printed after `QR image:`. Scan using **Agentum → Add computer → Scan QR code**. On an older CLI without `--open`, update with `npm install -g agentum@2`, or widen the terminal and use a monospaced font with normal line spacing. If scanning still fails, enter the printed host, ports, and pairing key manually in the app.
 
 **`pair` is an unknown command?**
 Check `ag --version`. Pairing requires Agentum 2 or later. Run `npm install -g agentum@2` to update, or use `npx agentum@2 pair` directly.

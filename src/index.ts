@@ -13,6 +13,7 @@ import { createServer, AgentumServer } from './server';
 import { pairingPayload, connectionAddresses, getInstanceIdentity } from './instance';
 import { MessageType, SessionInfo, SessionState } from './types';
 import { captureScreenshot, sendNotification } from './services';
+import { createPairingImage, openPairingImage } from './pairing-qr';
 
 const VERSION: string = require('../package.json').version;
 const DEFAULT_PORT = 11042;
@@ -29,8 +30,10 @@ program.command('pair')
   .option('--name <name>', 'Computer name shown on your phone')
   .option('--instance-port <port>', 'Internal terminal port when a TLS proxy uses a different public port')
   .option('--tls', 'Connect through your HTTPS/TLS proxy')
+  .option('--open', 'Open a clean QR image in your computer’s image viewer (recommended)')
   .option('--json', 'Print only the pairing JSON for local automation')
   .action(async options => {
+    if (options.json && options.open) throw new Error('Use --open or --json, not both.');
     const port = Number(options.port);
     const vncPort = options.vncPort ? Number(options.vncPort) : port + 1;
     const host = options.host || connectionAddresses('0.0.0.0')[0];
@@ -38,9 +41,33 @@ program.command('pair')
     const payload = pairingPayload(host, port, vncPort, getInstanceIdentity(options.instancePort ? Number(options.instancePort) : port, options.name), !!options.tls);
     if (options.json) { console.log(JSON.stringify(payload)); return; }
     const qr = require('qrcode');
-    console.log(await qr.toString(JSON.stringify(payload), { type: 'terminal', small: true }));
+    const serialized = JSON.stringify(payload);
+    if (!options.open) {
+      const columns = qr.create(serialized).modules.size + 4;
+      if (process.stdout.columns && process.stdout.columns < columns) {
+        console.log(`The terminal is too narrow for this QR code (${columns} columns needed). Open the QR image below or widen the terminal.`);
+      } else {
+        console.log(await qr.toString(serialized, { type: 'terminal', small: true }));
+      }
+    }
     console.log(`Scan in Agentum → Add computer → Scan QR code`);
     console.log(`Name: ${payload.instanceName}\nHost: ${payload.host}\nTerminal port: ${payload.port}\nDesktop port: ${payload.vncPort}\nTLS: ${payload.tls ? 'on' : 'off'}\nPairing key: ${payload.token}`);
+    try {
+      const imagePath = await createPairingImage(serialized);
+      console.log(`\nQR image: ${imagePath}`);
+      if (options.open) {
+        try {
+          await openPairingImage(imagePath);
+          console.log('Scan the QR image opened on your computer with the Agentum app.');
+        } catch {
+          console.log('Could not open an image viewer. Open the QR image file above manually, or enter the connection details in the app.');
+        }
+      } else {
+        console.log('QR distorted or not scanning? Open the image file above, or rerun this command with --open.');
+      }
+    } catch {
+      console.log('Could not save the QR image. Use the connection details above to pair manually.');
+    }
   });
 
 /**
@@ -114,7 +141,7 @@ async function serverCommand(options: { port: number; host?: string; vncPort?: n
       if (address.startsWith('127.') || address === 'localhost' || address === '::1') {
         console.log('For phone access on Wi-Fi: ag start --host 0.0.0.0');
       } else {
-        console.log(`Pair your phone: ag pair --host ${address} --port ${details.port}${details.vncPort ? ` --vnc-port ${details.vncPort}` : ''}`);
+        console.log(`In a second terminal, open your pairing QR image: ag pair --open --host ${address} --port ${details.port}${details.vncPort ? ` --vnc-port ${details.vncPort}` : ''}`);
       }
     }
     console.log(chalk.gray('Press Ctrl+C to stop'));
