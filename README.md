@@ -39,7 +39,7 @@ Only install and authenticate the agents you plan to use.
 
 ## Quick Setup
 
-**Agentum 2.0.1 is available from [GitHub Releases](https://github.com/priyankark/agentum-cli/releases/tag/v2.0.1).** npm publication is pending; the commands below download the built GitHub package directly, including the QR image fix. The npm registry currently has 2.0.0 under `next` and 1.0.3 under `latest`, so an unversioned `npx agentum` does not include this fix.
+**Agentum 2.0.1 is available on [npm](https://www.npmjs.com/package/agentum).** The commands below run the latest release directly with `npx`, including the QR image fix. A built package is also available from [GitHub Releases](https://github.com/priyankark/agentum-cli/releases/tag/v2.0.1).
 
 Use **AirCodum Agentum 1.1 or later** on your phone. Connect your phone and computer to the **same Wi-Fi** for initial setup.
 
@@ -48,7 +48,7 @@ Use **AirCodum Agentum 1.1 or later** on your phone. Connect your phone and comp
 Open a terminal on your computer and run:
 
 ```bash
-npx https://github.com/priyankark/agentum-cli/releases/download/v2.0.1/agentum-2.0.1.tgz start
+npx agentum@latest start
 ```
 
 If npm asks to install Agentum, enter `y`. No global installation is required. Run this from your project folder if you want new sessions to use that folder by default.
@@ -60,12 +60,12 @@ If npm asks to install Agentum, enter `y`. No global installation is required. R
 Open a **second terminal tab or window** on your computer (**⌘T** in macOS Terminal), then run:
 
 ```bash
-npx https://github.com/priyankark/agentum-cli/releases/download/v2.0.1/agentum-2.0.1.tgz pair --open
+npx agentum@latest pair --open
 ```
 
 **A square QR image opens in your computer's image viewer.** This avoids terminal fonts or line wrapping distorting the code. The image's file path and your host address, ports, and pairing key are also printed in the second terminal. This image option requires CLI **2.0.1 or later**.
 
-For a terminal QR instead, run `npx https://github.com/priyankark/agentum-cli/releases/download/v2.0.1/agentum-2.0.1.tgz pair` without `--open`. The code appears directly in that second terminal, and a clean PNG image is saved as a fallback. If the terminal is too narrow, Agentum prints the image path instead of a wrapped QR code.
+For a terminal QR instead, run `npx agentum@latest pair` without `--open`. The code appears directly in that second terminal, and a clean PNG image is saved as a fallback. If the terminal is too narrow, Agentum prints the image path instead of a wrapped QR code.
 
 ### 3. Pair your phone
 
@@ -76,7 +76,7 @@ If scanning fails, enter the **host, terminal port, desktop port, and pairing ke
 If you have several network adapters, choose the address your phone can reach (replace the example with your computer's Wi-Fi or Tailscale address):
 
 ```bash
-npx https://github.com/priyankark/agentum-cli/releases/download/v2.0.1/agentum-2.0.1.tgz pair --open --host 192.168.1.10
+npx agentum@latest pair --open --host 192.168.1.10
 ```
 
 Phones on the same Wi-Fi connect directly; Tailscale is optional for access from other networks. Public remote access requires a trusted TLS reverse proxy. See [setup details](SECURITY_CHANGES.md).
@@ -86,12 +86,12 @@ Phones on the same Wi-Fi connect directly; Tailscale is optional for access from
 If you prefer the shorter `ag` command:
 
 ```bash
-npm install -g https://github.com/priyankark/agentum-cli/releases/download/v2.0.1/agentum-2.0.1.tgz
+npm install -g agentum@latest
 ```
 
 Installation alone **does not start the server or display a QR code**. Run `ag start` in one terminal, leave it running, then run `ag pair --open` in a second terminal to open the QR image. Scan it in the phone app as described above.
 
-The examples below use `ag`. Without a global install, replace `ag` with `npx https://github.com/priyankark/agentum-cli/releases/download/v2.0.1/agentum-2.0.1.tgz` (for example, `npx https://github.com/priyankark/agentum-cli/releases/download/v2.0.1/agentum-2.0.1.tgz list`).
+The examples below use `ag`. Without a global install, replace `ag` with `npx agentum@latest` (for example, `npx agentum@latest list`).
 
 ### Multiple computers and instances
 
@@ -220,13 +220,13 @@ Access from anywhere, not just your local network. Works through firewalls and N
 ## Troubleshooting
 
 **Where is the QR code?**
-Run `npx https://github.com/priyankark/agentum-cli/releases/download/v2.0.1/agentum-2.0.1.tgz pair --open` (or `ag pair --open` after a global install) in a second terminal. A QR image opens in your computer's image viewer, and its path is printed in the terminal. Without `--open`, the QR appears directly in the terminal if it is wide enough. Installing the package or running `start` does not display it.
+Run `npx agentum@latest pair --open` (or `ag pair --open` after a global install) in a second terminal. A QR image opens in your computer's image viewer, and its path is printed in the terminal. Without `--open`, the QR appears directly in the terminal if it is wide enough. Installing the package or running `start` does not display it.
 
 **QR code looks distorted or won't scan?**
-Run `npx https://github.com/priyankark/agentum-cli/releases/download/v2.0.1/agentum-2.0.1.tgz pair --open` to scan a square PNG image unaffected by terminal formatting. You can also open the file printed after `QR image:`. Scan using **Agentum → Add computer → Scan QR code**. On an older CLI without `--open`, update with `npm install -g https://github.com/priyankark/agentum-cli/releases/download/v2.0.1/agentum-2.0.1.tgz`, or widen the terminal and use a monospaced font with normal line spacing. If scanning still fails, enter the printed host, ports, and pairing key manually in the app.
+Run `npx agentum@latest pair --open` to scan a square PNG image unaffected by terminal formatting. You can also open the file printed after `QR image:`. Scan using **Agentum → Add computer → Scan QR code**. On an older CLI without `--open`, update with `npm install -g agentum@latest`, or widen the terminal and use a monospaced font with normal line spacing. If scanning still fails, enter the printed host, ports, and pairing key manually in the app.
 
 **`pair` is an unknown command?**
-Check `ag --version`. Pairing requires Agentum 2 or later. Run `npm install -g https://github.com/priyankark/agentum-cli/releases/download/v2.0.1/agentum-2.0.1.tgz` to update, or use `npx https://github.com/priyankark/agentum-cli/releases/download/v2.0.1/agentum-2.0.1.tgz pair` directly.
+Check `ag --version`. Pairing requires Agentum 2 or later. Run `npm install -g agentum@latest` to update, or use `npx agentum@latest pair` directly.
 
 **Port in use?**
 ```bash
