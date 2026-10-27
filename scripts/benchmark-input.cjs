@@ -12,7 +12,7 @@ for (let round = 1; round <= 3; round++) {
   for (const backend of round % 2 ? ['robotjs', 'rusty-robot'] : ['rusty-robot', 'robotjs']) {
     const file = join(output, `${round}-${backend}.json`);
     const result = spawnSync(process.execPath, ['tests/rusty-robot-native.cjs', '--gui', `--benchmark=${file}`], {
-      cwd: root, env: { ...process.env, AGENTUM_INPUT_BACKEND: backend }, encoding: 'utf8', timeout: 120000,
+      cwd: root, env: { ...process.env, AGENTUM_INPUT_BACKEND: backend, AGENTUM_MEDIA_BACKEND: backend }, encoding: 'utf8', timeout: 120000,
     });
     writeFileSync(join(output, `${round}-${backend}.log`), result.stdout + result.stderr);
     if (result.error || result.status !== 0) throw new Error(`${backend} round ${round} failed: ${result.error || result.stderr}`);

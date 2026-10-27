@@ -35,3 +35,5 @@ native/rusty-robot/*.node
 
 native/rusty-robot/source/
 benchmark-artifacts/
+
+/benchmarks/

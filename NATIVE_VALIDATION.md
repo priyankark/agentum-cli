@@ -39,7 +39,7 @@ See the [mobile native validation report](https://github.com/priyankark/AirCodum
 
 Automatic compatibility changes and additional Android checks are described in [COMPATIBILITY.md](COMPATIBILITY.md).
 
-## Rusty Robot adapter checkpoint — 2026-10-27
+## Initial Rusty Robot adapter checkpoint — 2026-10-27 (historical)
 
 Built the Node-API addon from pinned Rusty Robot source by following its bundled
 agent skill. Local Apple Silicon/macOS checks: TypeScript build; Rust 1.88 check;
@@ -59,3 +59,22 @@ all input was native and assertions read the target widget's state. macOS/Window
 jobs built/loaded the addon and verified native queries and invalid arguments.
 The locked local Mac run remains uncompleted. This is source-build input dogfooding,
 not a capture-throughput benchmark or prebuilt-binary release.
+
+## Completed macOS input and composed media checkpoint — 2026-10-27
+
+After the Mac was unlocked, the real authenticated socket/AppKit input workflow
+passed: Unicode/multiline insertion, button activation, shortcuts, drag selection
+and reset. Batched Unicode delivery also passed the Rust library's Chromium and
+AppKit native fixtures. The earlier locked-session attempt above is superseded.
+
+The shared addon now performs capture, resize, BLAKE3 hashing and JPEG/PNG encoding
+in Rust workers. The app capture service and screenshot service compose it.
+39 local automated tests pass (2 existing skips). Input/media adapter and package
+CI pass on Linux, macOS and Windows. Native Linux socket-to-GUI input also passes.
+
+The repeated macOS benchmark runs actual Agentum capture and socket transport for
+video, with static and moving owned content at fixed 1440×810/quality85/30FPS.
+Input-only measurements separately verify actual AppKit state. Raw samples,
+limits and the paired original/Rust results are in the
+[public report](https://priyankark.github.io/rusty-robot/). This does not establish
+physical-phone rendering latency or production-network performance.
