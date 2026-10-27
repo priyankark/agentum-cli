@@ -34,9 +34,10 @@ jobs:
         env:
           AGENTUM_INPUT_BACKEND: rusty-robot
       - if: runner.os == 'Linux'
+        timeout-minutes: 5
         run: |
-          sudo apt-get update
-          sudo apt-get install -y xvfb openbox libgtk-3-0 libnss3 libasound2t64 libgbm1 libatk-bridge2.0-0
+          sudo apt-get -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o Acquire::Retries=2 update
+          sudo apt-get -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o Acquire::Retries=2 install -y xvfb openbox libgtk-3-0 libnss3 libasound2t64 libgbm1 libatk-bridge2.0-0
           npm ci --prefix tests/fixtures/rusty-robot-electron
           node tests/fixtures/rusty-robot-electron/node_modules/electron/install.js
           xvfb-run -a --server-args='-screen 0 1920x1080x24' bash -c 'openbox >/tmp/agentum-openbox.log 2>&1 & node tests/rusty-robot-native.cjs --gui'
