@@ -1,5 +1,8 @@
 name: Rusty Robot input and media
 on:
+  push:
+    branches: [main]
+    tags: ['v*']
   pull_request:
     paths: ['native/rusty-robot/**', 'src/vnc/**', 'tests/*rusty*', 'tests/vnc-controls.test.cjs', 'scripts/build-rusty-robot.cjs', '.github/workflows/rusty-robot.yml']
   workflow_dispatch:

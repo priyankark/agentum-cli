@@ -1,6 +1,6 @@
 {
   "name": "agentum",
-  "version": "2.0.1",
+  "version": "2.1.0",
   "description": "Mirror terminal sessions and AI coding agents to mobile over WebSocket",
   "main": "dist/index.js",
   "bin": {
@@ -64,5 +64,17 @@
   },
   "engines": {
     "node": ">=18.0.0"
-  }
+  },
+  "files": [
+    "dist/",
+    "scripts/postinstall.cjs",
+    "scripts/build-rusty-robot.cjs",
+    "native/rusty-robot/source.json",
+    "README.md",
+    "RUSTY_ROBOT.md",
+    "SECURITY_CHANGES.md",
+    "COMPATIBILITY.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ]
 }

@@ -39,7 +39,7 @@ Only install and authenticate the agents you plan to use.
 
 ## Quick Setup
 
-**Agentum 2.0.1 is available on [npm](https://www.npmjs.com/package/agentum).** The commands below run the latest release directly with `npx`, including the QR image fix. A built package is also available from [GitHub Releases](https://github.com/priyankark/agentum-cli/releases/tag/v2.0.1).
+**Agentum 2.1.0 adds opt-in Rust input and media processing.** Download the built package from [GitHub Releases](https://github.com/priyankark/agentum-cli/releases/tag/v2.1.0) and install it with `npm install -g ./agentum-2.1.0.tgz`. The `npx agentum@latest` commands below use the latest version available on npm, which may lag the GitHub release. See [Rust setup](RUSTY_ROBOT.md).
 
 Use **AirCodum Agentum 1.1 or later** on your phone. Connect your phone and computer to the **same Wi-Fi** for initial setup.
 
