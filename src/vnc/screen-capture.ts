@@ -322,7 +322,7 @@ export class ScreenCaptureManager {
   public updateQualitySettings(settings: Partial<VNCQualitySettings>): void {
     let changed = false;
 
-    if (settings.width !== undefined &&
+    if (Number.isInteger(settings.width) && settings.width !== undefined &&
         settings.width >= this.MIN_WIDTH &&
         settings.width <= this.MAX_WIDTH &&
         settings.width !== this.quality.width) {
@@ -331,7 +331,7 @@ export class ScreenCaptureManager {
       changed = true;
     }
 
-    if (settings.jpegQuality !== undefined &&
+    if (Number.isInteger(settings.jpegQuality) && settings.jpegQuality !== undefined &&
         settings.jpegQuality >= this.MIN_QUALITY &&
         settings.jpegQuality <= this.MAX_QUALITY &&
         settings.jpegQuality !== this.quality.jpegQuality) {
@@ -339,7 +339,7 @@ export class ScreenCaptureManager {
       changed = true;
     }
 
-    if (settings.fps !== undefined &&
+    if (Number.isInteger(settings.fps) && settings.fps !== undefined &&
         settings.fps >= 1 &&
         settings.fps <= 60 &&
         settings.fps !== this.quality.fps) {
