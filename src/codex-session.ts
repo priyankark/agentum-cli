@@ -1,19 +1,7 @@
 /**
- * OpenAI Codex CLI Session Manager
- * Uses `codex exec "prompt" --json` for structured communication
- *
- * Codex CLI JSONL output format (--json flag):
- * Line 1: {"reasoning summaries":"auto","model":"gpt-5","provider":"openai",...}
- * Line 2: {"prompt":"..."}
- * Line 3+: {"id":"0","msg":{"type":"task_started"|"agent_message"|"token_count"|...}}
- *
- * Message types:
- * - task_started: Task started with model_context_window
- * - agent_message: Agent response with "message" field
- * - function_call: Tool call with function details
- * - function_call_output: Tool result
- * - token_count: Token usage stats
- * - error: Error event
+ * OpenAI Codex CLI session manager.
+ * Accepts current `codex exec --json` thread/turn/item events and the legacy
+ * id/msg envelope. Only completed assistant items become durable chat messages.
  */
 
 import { spawn, ChildProcess } from 'child_process';
@@ -22,6 +10,11 @@ import * as readline from 'readline';
 
 // Codex JSON streaming line types (JSONL format with --json flag)
 export interface CodexJsonLine {
+  type?: string;
+  thread_id?: string;
+  item?: CodexStreamItem;
+  error?: { message?: string };
+  message?: string;
   // Config line (first line)
   model?: string;
   provider?: string;
@@ -33,6 +26,30 @@ export interface CodexJsonLine {
   // Event line (id + msg)
   id?: string;
   msg?: CodexMessage_Internal;
+}
+
+interface CodexStreamItem {
+  id?: string;
+  type: string;
+  text?: string;
+  command?: string;
+  aggregated_output?: string;
+  exit_code?: number | null;
+  status?: string;
+  server?: string;
+  tool?: string;
+  arguments?: Record<string, unknown>;
+  result?: unknown;
+  error?: { message?: string };
+  changes?: unknown;
+  query?: string;
+}
+interface CodexParseState {
+  currentAssistantMessage: string;
+  updateAssistantMessage: (message: string) => void;
+  completedItems: Set<string>;
+  startedTools: Set<string>;
+  fail: (error: Error) => void;
 }
 
 // Internal message structure from Codex
@@ -49,6 +66,7 @@ export interface CodexMessage_Internal {
   arguments?: string;
   // function_call_output
   output?: string;
+  is_error?: boolean;
   // token_count
   input_tokens?: number;
   output_tokens?: number;
@@ -169,7 +187,7 @@ export class CodexSessionManager {
     // Build codex command arguments
     const args = this.buildCodexArgs(session, prompt);
 
-    console.log(`[CODEX] Running: ${this.codexBinaryPath} ${args.join(' ')}`);
+    console.log(`[CODEX] Running ${this.codexBinaryPath} for session ${session.id}`);
 
     try {
       await this.executeCodexCommand(session, args);
@@ -186,7 +204,7 @@ export class CodexSessionManager {
     const args: string[] = ['exec'];
 
     // Build the full prompt with conversation history for multi-turn support
-    // Since codex exec doesn't support native multi-turn, we include history as context
+    // Retain the existing history-replay contract across supported CLI versions.
     const fullPrompt = this.buildPromptWithHistory(session, prompt);
 
     // Add the prompt
@@ -274,6 +292,10 @@ export class CodexSessionManager {
       });
 
       let currentAssistantMessage = '';
+      let failure: Error | undefined;
+      let settled = false;
+      const completedItems = new Set<string>();
+      const startedTools = new Set<string>();
 
       rl.on('line', (line) => {
         if (!line.trim()) return;
@@ -286,6 +308,8 @@ export class CodexSessionManager {
           this.processJsonLine(session, jsonLine, {
             currentAssistantMessage,
             updateAssistantMessage: (msg) => { currentAssistantMessage = msg; },
+            completedItems, startedTools,
+            fail: error => { failure = error; },
           });
         } catch (e) {
           // Not JSON, might be raw output - log it
@@ -298,27 +322,28 @@ export class CodexSessionManager {
         console.error(`[CODEX] stderr: ${errorText}`);
       });
 
-      proc.on('close', (code) => {
+      const finish = (code: number | null, spawnError?: Error) => {
+        if (settled) return;
+        settled = true;
         session.process = undefined;
-
-        if (code === 0) {
+        session.lastActivity = Date.now();
+        const error = spawnError || failure || (code !== 0
+          ? new Error(`Codex process exited with code ${code}`)
+          : !currentAssistantMessage.trim()
+            ? new Error('Codex finished without an assistant message. Check the Codex CLI output and version.')
+            : undefined);
+        if (error) {
+          session.state = 'error';
+          this.eventHandlers.onSessionEnd(session.id, error.message, true);
+          reject(error);
+        } else {
           session.state = 'idle';
           this.eventHandlers.onSessionEnd(session.id, currentAssistantMessage, false);
           resolve();
-        } else {
-          session.state = 'error';
-          const error = new Error(`Codex process exited with code ${code}`);
-          this.eventHandlers.onSessionEnd(session.id, error.message, true);
-          reject(error);
         }
-      });
-
-      proc.on('error', (error) => {
-        console.error(`[CODEX] Process error:`, error);
-        session.process = undefined;
-        session.state = 'error';
-        reject(error);
-      });
+      };
+      proc.on('close', code => finish(code));
+      proc.on('error', error => finish(null, error));
 
       // Log process start
       if (proc.pid) {
@@ -336,11 +361,23 @@ export class CodexSessionManager {
   private processJsonLine(
     session: CodexSession,
     jsonLine: CodexJsonLine,
-    state: {
-      currentAssistantMessage: string;
-      updateAssistantMessage: (msg: string) => void;
-    }
+    state: CodexParseState
   ): void {
+    // Current CLI protocol (verified against codex-cli 0.163.0).
+    if (jsonLine.type === 'thread.started' && typeof jsonLine.thread_id === 'string') {
+      session.codexThreadId = jsonLine.thread_id;
+      this.eventHandlers.onSessionStart(session.id, jsonLine.thread_id);
+      return;
+    }
+    if (jsonLine.type === 'turn.failed' || jsonLine.type === 'error') {
+      state.fail(new Error(jsonLine.error?.message || jsonLine.message || 'Codex turn failed'));
+      return;
+    }
+    if (jsonLine.type?.startsWith('item.') && jsonLine.item) {
+      this.processStreamItem(session, jsonLine.type, jsonLine.item, state);
+      return;
+    }
+
     // Config line (first line) - contains model, provider, etc.
     if (jsonLine.model && jsonLine.provider) {
       console.log(`[CODEX] Config: model=${jsonLine.model}, provider=${jsonLine.provider}, workdir=${jsonLine.workdir}`);
@@ -363,16 +400,40 @@ export class CodexSessionManager {
     // Unknown line format
   }
 
+  private processStreamItem(session: CodexSession, event: string, item: CodexStreamItem, state: CodexParseState): void {
+    const completed = event === 'item.completed';
+    if (item.id && state.completedItems.has(item.id)) return;
+    if (completed && item.id) state.completedItems.add(item.id);
+    if (item.type === 'agent_message') {
+      if (completed && typeof item.text === 'string' && item.text) {
+        this.processMessage(session, { type: 'agent_message', message: item.text }, state);
+      }
+      return;
+    }
+    // Reasoning/progress snapshots are not assistant chat answers.
+    if (!['command_execution', 'mcp_tool_call', 'file_change', 'web_search'].includes(item.type)) return;
+    const toolName = item.type === 'mcp_tool_call' ? `${item.server || 'mcp'}.${item.tool || 'tool'}` : item.type;
+    const input = item.type === 'command_execution' ? { command: item.command }
+      : item.type === 'mcp_tool_call' ? item.arguments || {}
+      : item.type === 'file_change' ? { changes: item.changes } : { query: item.query };
+    if ((event === 'item.started' || completed) && (!item.id || !state.startedTools.has(item.id))) {
+      if (item.id) state.startedTools.add(item.id);
+      this.processMessage(session, { type: 'function_call', name: toolName, call_id: item.id, arguments: JSON.stringify(input) }, state);
+    }
+    if (completed) {
+      const failed = item.status === 'failed' || Boolean(item.error) || (typeof item.exit_code === 'number' && item.exit_code !== 0);
+      const output = item.aggregated_output ?? item.error?.message ?? JSON.stringify(item.result ?? item.changes ?? { status: item.status });
+      this.processMessage(session, { type: 'function_call_output', call_id: item.id, output, is_error: failed }, state);
+    }
+  }
+
   /**
    * Process an event message from Codex
    */
   private processMessage(
     session: CodexSession,
     msg: CodexMessage_Internal,
-    state: {
-      currentAssistantMessage: string;
-      updateAssistantMessage: (msg: string) => void;
-    }
+    state: CodexParseState
   ): void {
     switch (msg.type) {
       case 'task_started':
@@ -429,7 +490,7 @@ export class CodexSessionManager {
             session.id,
             msg.call_id || 'unknown',
             msg.output,
-            false  // We don't know if it's an error from this message type
+            Boolean(msg.is_error)
           );
 
           const resultMessage: CodexMessage = {
@@ -438,6 +499,7 @@ export class CodexSessionManager {
             content: msg.output,
             timestamp: Date.now(),
             toolResult: msg.output,
+            isError: Boolean(msg.is_error),
           };
           session.messageHistory.push(resultMessage);
           this.eventHandlers.onMessage(session.id, resultMessage);
@@ -465,7 +527,7 @@ export class CodexSessionManager {
 
       case 'error':
         console.error(`[CODEX] Error: ${msg.error}`);
-        this.eventHandlers.onError(session.id, new Error(msg.error || 'Unknown error'));
+        state.fail(new Error(msg.error || 'Unknown error'));
         break;
 
       default:
