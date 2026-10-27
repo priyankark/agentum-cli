@@ -1,0 +1,5 @@
+{
+  "name": "agentum-rusty-robot-desktop-fixture",
+  "private": true,
+  "dependencies": { "electron": "35.7.5" }
+}

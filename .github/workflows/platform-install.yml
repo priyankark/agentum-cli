@@ -1,7 +1,8 @@
 name: Windows, macOS and Linux installation
 on:
   push:
-    branches: [fix/agentum-1.0.3, feature/agentum-desktop-controls]
+    branches: [main, fix/agentum-1.0.3, feature/agentum-desktop-controls]
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
 permissions:

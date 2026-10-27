@@ -12,3 +12,7 @@ tsconfig.json
 # Git
 .git/
 .gitignore
+
+# Source-only experimental adapter; never ship host-built artifacts
+native/rusty-robot/target/
+native/rusty-robot/*.node

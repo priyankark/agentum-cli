@@ -1,6 +1,6 @@
 {
   "name": "agentum",
-  "version": "2.0.1",
+  "version": "2.1.0",
   "description": "Mirror terminal sessions and AI coding agents to mobile over WebSocket",
   "main": "dist/index.js",
   "bin": {
@@ -17,7 +17,10 @@
     "test:security": "npm test",
     "test:legacy": "./tests/run-all-tests.sh",
     "test:platform": "npm run build && node --test tests/platform.test.cjs",
-    "test:package": "node scripts/verify-package-install.cjs"
+    "test:package": "node scripts/verify-package-install.cjs",
+    "build:rusty-robot": "node scripts/build-rusty-robot.cjs",
+    "test:rusty-robot": "npm run build && node --test tests/rusty-robot.test.cjs",
+    "test:rusty-robot:native": "node tests/rusty-robot-native.cjs"
   },
   "keywords": [
     "vibe-coding",
@@ -61,5 +64,18 @@
   },
   "engines": {
     "node": ">=18.0.0"
-  }
+  },
+  "files": [
+    "dist/**/*.js",
+    "dist/**/*.d.ts",
+    "scripts/postinstall.cjs",
+    "scripts/build-rusty-robot.cjs",
+    "native/rusty-robot/source.json",
+    "README.md",
+    "RUSTY_ROBOT.md",
+    "SECURITY_CHANGES.md",
+    "COMPATIBILITY.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ]
 }

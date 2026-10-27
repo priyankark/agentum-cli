@@ -15,6 +15,12 @@ try {
   const packed = JSON.parse(run(process.execPath, [npm, 'pack', '--ignore-scripts', '--json', '--pack-destination', root]));
   const files = packed[0].files.map(file => file.path);
   if (!files.includes('scripts/postinstall.cjs') || !files.includes('dist/desktop-support.js') || !files.includes('dist/pairing-qr.js')) throw new Error('Published package omits a required runtime file');
+  for (const required of ['scripts/build-rusty-robot.cjs', 'native/rusty-robot/source.json', 'RUSTY_ROBOT.md']) {
+    if (!files.includes(required)) throw new Error(`Published package omits ${required}`);
+  }
+  if (files.some(file => /(^|\/)(benchmark-artifacts|benchmarks|target|source|tests|\.git)(\/|$)/.test(file) || file.endsWith('.node') || file.endsWith('.tsbuildinfo') || file.endsWith('.map') || /pairing|session/.test(file) && !file.startsWith('dist/'))) {
+    throw new Error('Published package contains private, development, or host-specific artifacts');
+  }
   const installRoot = path.join(root, 'installed');
   run(process.execPath, [npm, 'install', '--prefix', installRoot, path.join(root, packed[0].filename), '--no-audit', '--no-fund', '--foreground-scripts']);
   const installed = path.join(installRoot, 'node_modules/agentum');
