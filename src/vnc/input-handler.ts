@@ -1,6 +1,6 @@
 /**
  * Input handler for VNC mouse and keyboard events
- * Uses @hurdlegroup/robotjs for native input simulation
+ * Uses RobotJS by default, or the opt-in Rusty Robot Node-API backend
  *
  * World-class implementation with:
  * - Robust key name mapping for cross-platform compatibility
@@ -10,8 +10,10 @@
 
 import type { VNCMouseEvent, VNCScrollEvent, VNCKeyboardEvent, ScreenDimensions } from './types';
 
-// Lazy load robotjs to avoid issues if not installed
-let robot: typeof import('@hurdlegroup/robotjs') | null = null;
+import { loadRustBackend, type InputBackend } from './rusty-robot';
+
+// Load the selected backend only when desktop input is needed.
+let robot: InputBackend | null = null;
 
 /**
  * Key name mapping from client-friendly names to robotjs-compatible names
@@ -115,11 +117,15 @@ export function initializeRobot(): boolean {
 
   try {
     // Dynamic import to handle cases where native module isn't available
-    robot = require('@hurdlegroup/robotjs');
-    console.log('[VNC Input] robotjs loaded successfully');
+    const backend = process.env.AGENTUM_INPUT_BACKEND || 'robotjs';
+    if (backend !== 'robotjs' && backend !== 'rusty-robot') {
+      throw new Error(`Unknown AGENTUM_INPUT_BACKEND: ${backend}`);
+    }
+    robot = backend === 'rusty-robot' ? loadRustBackend() : require('@hurdlegroup/robotjs');
+    console.log(`[VNC Input] ${backend} loaded successfully`);
     return true;
   } catch (error) {
-    console.error('[VNC Input] Failed to load robotjs:', error);
+    console.error('[VNC Input] Failed to load input backend:', error);
     return false;
   }
 }

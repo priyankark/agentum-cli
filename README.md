@@ -249,3 +249,10 @@ ifconfig | grep "inet "
 
 - [Repository](https://github.com/priyankark/agentum-cli)
 - [AirCodum](https://aircodum.com)
+
+### Experimental Rust input backend
+
+An opt-in [Rusty Robot adapter](RUSTY_ROBOT.md) routes VNC mouse and keyboard
+input through Rust. Build it from source and set `AGENTUM_INPUT_BACKEND=rusty-robot`.
+RobotJS remains the default; capture/encoding and authenticated session controls
+are unchanged. See the guide for platform requirements and native verification.

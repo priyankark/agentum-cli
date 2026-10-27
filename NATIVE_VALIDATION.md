@@ -38,3 +38,17 @@ The connected Android stream showed about 6–7 sent frames/second and roughly 1
 See the [mobile native validation report](https://github.com/priyankark/AirCodum-Agnentum-Mobile/blob/codex/secure-vnc-keyboard/NATIVE_VALIDATION.md) for the Android script and complete limitations. The CLI provides `node tests/benchmark-native-capture.cjs` after `npm run build` to repeat the local capture comparison. iOS, physical devices, Windows/Linux, the full VS Code host and production-network latency remain unverified. The existing mobile dependency findings remain unresolved.
 
 Automatic compatibility changes and additional Android checks are described in [COMPATIBILITY.md](COMPATIBILITY.md).
+
+## Rusty Robot adapter checkpoint — 2026-10-27
+
+Built the Node-API addon from pinned Rusty Robot source by following its bundled
+agent skill. Local Apple Silicon/macOS checks: TypeScript build; Rust 1.88 check;
+Clippy with warnings denied; 37 regular tests passed (two existing tests skipped);
+three authenticated VNC socket tests passed with the Rust adapter selected and
+fake native outputs. Actual addon permission/display/pointer queries and invalid
+argument rejection passed without emitting input.
+
+The owned AppKit end-to-end test is implemented, but its initial run stopped
+before input because the Mac session was locked and the fixture could not gain
+focus. That run is not a native delivery pass. The opt-in backend remains
+experimental until the unlocked GUI run and remote adapter jobs are recorded.

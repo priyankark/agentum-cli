@@ -28,3 +28,7 @@ Thumbs.db
 
 # TypeScript
 *.tsbuildinfo
+
+# Locally built experimental Rust input backend
+native/rusty-robot/target/
+native/rusty-robot/*.node

@@ -1,0 +1,18 @@
+[package]
+name = "agentum-rusty-robot"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+publish = false
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+napi = { version = "2", default-features = false, features = ["napi6"] }
+napi-derive = "2"
+rusty-robot = { git = "https://github.com/priyankark/rusty-robot", rev = "a7a669c5c17b529cd33a02a6039c11b10d777678", default-features = false }
+
+[build-dependencies]
+napi-build = "2"

@@ -1,0 +1,41 @@
+name: Rusty Robot input adapter
+on:
+  push:
+    branches: [feature/rusty-robot-input]
+  pull_request:
+    paths: ['native/rusty-robot/**', 'src/vnc/**', 'tests/*rusty*', 'tests/vnc-controls.test.cjs', 'scripts/build-rusty-robot.cjs', '.github/workflows/rusty-robot.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  adapter:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec
+        with:
+          components: rustfmt, clippy
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build:rusty-robot
+      - run: cargo fmt --manifest-path native/rusty-robot/Cargo.toml --check
+      - run: cargo clippy --manifest-path native/rusty-robot/Cargo.toml --locked -- -D warnings
+      - run: npm test
+      - run: node --test tests/vnc-controls.test.cjs
+        env:
+          AGENTUM_INPUT_BACKEND: rusty-robot
+      - if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+          xvfb-run -a npm run test:rusty-robot:native
+      - if: runner.os != 'Linux'
+        run: npm run test:rusty-robot:native
