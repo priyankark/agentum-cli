@@ -64,6 +64,12 @@ fixture closes and pointer position is restored on completion. Optional
 `AGENTUM_RUSTY_EVIDENCE=/absolute/path/prefix` saves an owned-window PNG and JSON.
 No credentials or unrelated desktop captures are saved.
 
+Linux CI runs the same authenticated input scenario in an owned Electron window
+under Xvfb/Openbox. To reproduce on an available Linux desktop, install the fixture
+with `npm ci --prefix tests/fixtures/rusty-robot-electron`, run its Electron
+`install.js` if npm deferred it, then run the same `--gui` command. Target-window
+observations verify native delivery; input is never synthesized in JavaScript.
+
 The AppKit fixture derives from Rusty Robot, copyright (c) 2026 Priyankar Kumar and
 contributors, MIT; see this repository's LICENSE for the same permission terms.
 The integration was built by dogfooding Rusty Robot's bundled agent skill; detailed

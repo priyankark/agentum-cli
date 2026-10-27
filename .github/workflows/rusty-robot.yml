@@ -1,7 +1,5 @@
 name: Rusty Robot input adapter
 on:
-  push:
-    branches: [feature/rusty-robot-input]
   pull_request:
     paths: ['native/rusty-robot/**', 'src/vnc/**', 'tests/*rusty*', 'tests/vnc-controls.test.cjs', 'scripts/build-rusty-robot.cjs', '.github/workflows/rusty-robot.yml']
   workflow_dispatch:
