@@ -18,7 +18,7 @@ try {
   for (const required of ['scripts/build-rusty-robot.cjs', 'native/rusty-robot/source.json', 'RUSTY_ROBOT.md']) {
     if (!files.includes(required)) throw new Error(`Published package omits ${required}`);
   }
-  if (files.some(file => /(^|\/)(benchmark-artifacts|benchmarks|target|source|tests|\.git)(\/|$)/.test(file) || file.endsWith('.node') || /pairing|session/.test(file) && !file.startsWith('dist/'))) {
+  if (files.some(file => /(^|\/)(benchmark-artifacts|benchmarks|target|source|tests|\.git)(\/|$)/.test(file) || file.endsWith('.node') || file.endsWith('.tsbuildinfo') || file.endsWith('.map') || /pairing|session/.test(file) && !file.startsWith('dist/'))) {
     throw new Error('Published package contains private, development, or host-specific artifacts');
   }
   const installRoot = path.join(root, 'installed');

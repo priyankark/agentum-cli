@@ -66,7 +66,8 @@
     "node": ">=18.0.0"
   },
   "files": [
-    "dist/",
+    "dist/**/*.js",
+    "dist/**/*.d.ts",
     "scripts/postinstall.cjs",
     "scripts/build-rusty-robot.cjs",
     "native/rusty-robot/source.json",
