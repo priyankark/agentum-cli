@@ -53,17 +53,14 @@ export class ScreenCaptureManager {
 
   // Subscribers
   private subscribers: FrameCallback[] = [];
-  private screenSize: ScreenDimensions;
-  private cachedDimensions: ScreenDimensions;
+  private screenSize: ScreenDimensions | null = null;
+  private cachedDimensions: ScreenDimensions | null = null;
 
   // Performance monitoring interval
   private performanceMonitorInterval: NodeJS.Timeout | null = null;
 
-  private constructor() {
-    this.screenSize = getScreenSize();
-    this.cachedDimensions = this.getScaledDimensions();
-
-  }
+  // Display lookup belongs inside the recoverable capture loop.
+  private constructor() {}
 
   /**
    * Get singleton instance
@@ -167,15 +164,15 @@ export class ScreenCaptureManager {
           return;
         }
         const screen = getScreenSize();
-        if (screen.width !== this.screenSize.width || screen.height !== this.screenSize.height) {
-          this.screenSize = screen; this.cachedDimensions = this.getScaledDimensions(); this.lastFrameHash = null;
+        if (screen.width !== this.screenSize?.width || screen.height !== this.screenSize?.height) {
+          this.screenSize = screen; this.cachedDimensions = this.getScaledDimensions() ?? this.cachedDimensions; this.lastFrameHash = null;
         }
         const raw = await capturePrimaryScreen();
         if (!active()) return;
         const hash = crypto.createHash('sha256').update(raw).digest('hex');
         // Periodic refresh allows a slow/new subscriber to recover on an idle desktop.
         if (hash !== this.lastFrameHash || Date.now() - this.lastRefresh >= 1000) {
-          const dimensions = { ...this.cachedDimensions };
+          const dimensions = this.getScaledDimensions()!;
           const frame = await this.processFrame(raw, dimensions);
           if (!active() || qualityGeneration !== this.qualityGeneration) return;
           this.lastFrameHash = hash;
@@ -289,7 +286,7 @@ export class ScreenCaptureManager {
         this.MIN_WIDTH,
         this.quality.width - 128
       );
-      this.cachedDimensions = this.getScaledDimensions();
+      this.cachedDimensions = this.getScaledDimensions() ?? this.cachedDimensions;
     } else if (dropRate < 0.05 && avgProcessingTime < this.MIN_FRAME_INTERVAL * 0.5) {
       // Gradually improve quality when performance is good
       this.quality.jpegQuality = Math.min(
@@ -300,7 +297,7 @@ export class ScreenCaptureManager {
         this.MAX_WIDTH,
         this.quality.width + 64
       );
-      this.cachedDimensions = this.getScaledDimensions();
+      this.cachedDimensions = this.getScaledDimensions() ?? this.cachedDimensions;
     }
 
     this.lastPerformanceCheck = now;
@@ -309,7 +306,8 @@ export class ScreenCaptureManager {
   /**
    * Calculate scaled dimensions maintaining aspect ratio
    */
-  private getScaledDimensions(): ScreenDimensions {
+  private getScaledDimensions(): ScreenDimensions | null {
+    if (!this.screenSize) return null;
     const width = Math.min(this.quality.width, this.screenSize.width);
     const { width: realWidth, height: realHeight } = this.screenSize;
     const height = Math.floor(width * (realHeight / realWidth));
@@ -327,7 +325,7 @@ export class ScreenCaptureManager {
         settings.width <= this.MAX_WIDTH &&
         settings.width !== this.quality.width) {
       this.quality.width = settings.width;
-      this.cachedDimensions = this.getScaledDimensions();
+      this.cachedDimensions = this.getScaledDimensions() ?? this.cachedDimensions;
       changed = true;
     }
 
@@ -392,6 +390,7 @@ export class ScreenCaptureManager {
    * Get current screen dimensions
    */
   public getScreenDimensions(): ScreenDimensions {
+    if (!this.cachedDimensions) throw new Error('No frame dimensions are available yet');
     return { ...this.cachedDimensions };
   }
 

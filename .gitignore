@@ -37,3 +37,6 @@ native/rusty-robot/source/
 benchmark-artifacts/
 
 /benchmarks/
+
+/release-artifacts/
+/native/pty/prebuilds/

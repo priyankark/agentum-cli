@@ -1,4 +1,4 @@
-import { isAbsolute, resolve } from 'path';
+import { loadRustAddon } from './native-addon';
 import type { ScreenDimensions } from './types';
 
 export type MouseButton = 'left' | 'right' | 'middle';
@@ -22,35 +22,32 @@ export function createRustBackend(addon: RustAddon): InputBackend {
     'scrollMouse', 'keyTap', 'keyToggle', 'typeString', 'getPermissions'] as const) {
     if (typeof addon?.[method] !== 'function') throw new Error(`Rusty Robot addon is missing ${method}`);
   }
-  if (addon.getPermissions().accessibility === false) {
-    throw new Error('Rusty Robot needs Accessibility permission for the Agentum host process');
-  }
+  const ensureInputPermission = () => {
+    if (addon.getPermissions().accessibility === false) throw new Error('Grant Accessibility permission to the Agentum host in System Settings → Privacy & Security → Accessibility');
+  };
   const held = new Set<MouseButton>();
   return {
     getScreenSize: () => addon.getScreenSize(),
     moveMouse(x, y) {
+      ensureInputPermission();
       const button = [...held].at(-1);
       if (button) addon.dragMouse(x, y, button);
       else addon.moveMouse(x, y);
     },
     mouseToggle(state, button) {
+      ensureInputPermission();
       addon.mouseToggle(state, button);
       // Change state only after a successful native event; failed releases can retry.
       if (state === 'down') held.add(button);
       else held.delete(button);
     },
-    scrollMouse: (x, y) => addon.scrollMouse(x, y),
-    keyTap: (key, modifiers) => addon.keyTap(key, modifiers),
-    keyToggle: (key, state, modifiers) => addon.keyToggle(key, state, modifiers),
-    typeString: text => addon.typeString(text),
+    scrollMouse: (x, y) => { ensureInputPermission(); addon.scrollMouse(x, y); },
+    keyTap: (key, modifiers) => { ensureInputPermission(); addon.keyTap(key, modifiers); },
+    keyToggle: (key, state, modifiers) => { ensureInputPermission(); addon.keyToggle(key, state, modifiers); },
+    typeString: (text) => { ensureInputPermission(); addon.typeString(text); },
   };
 }
 
 export function loadRustBackend(): InputBackend {
-  const configured = process.env.AGENTUM_RUSTY_ROBOT_PATH;
-  if (configured && !isAbsolute(configured)) {
-    throw new Error('AGENTUM_RUSTY_ROBOT_PATH must be an absolute path to a trusted .node addon');
-  }
-  const path = configured || resolve(__dirname, '../../native/rusty-robot/agentum-rusty-robot.node');
-  return createRustBackend(require(path) as RustAddon);
+  return createRustBackend(loadRustAddon<RustAddon>());
 }

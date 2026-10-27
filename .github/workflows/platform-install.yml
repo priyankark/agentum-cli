@@ -1,26 +1,100 @@
 name: Windows, macOS and Linux installation
 on:
   push:
-    branches: [main, fix/agentum-1.0.3, feature/agentum-desktop-controls]
+    branches: [main]
     tags: ['v*']
   pull_request:
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
-  install:
+  linux-terminal:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - {os: ubuntu-22.04, arch: x64}
+          - {os: ubuntu-22.04-arm, arch: arm64}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '22'
+          architecture: ${{ matrix.arch }}
+          cache: npm
+      - run: npm ci --omit=optional --no-audit --no-fund
+      - name: Stage terminal binary built from the pinned upstream package
+        env:
+          PTY_ARCH: ${{ matrix.arch }}
+        run: node -e "const fs=require('node:fs');const d='native/pty/prebuilds/linux-'+process.env.PTY_ARCH;fs.mkdirSync(d,{recursive:true});fs.copyFileSync('node_modules/node-pty/build/Release/pty.node',d+'/pty.node')"
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: pty-linux-${{ matrix.arch }}
+          path: native/pty/prebuilds
+          if-no-files-found: error
+  package:
+    needs: linux-terminal
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version: '22'
           cache: npm
+      - run: npm ci --omit=optional --no-audit --no-fund
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: pty-linux-*
+          merge-multiple: true
+          path: native/pty/prebuilds
+      - run: npm run build
+      - run: npm run prepare:release
+      - run: npm pack
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: agentum-package
+          path: agentum-*.tgz
+          if-no-files-found: error
+  install:
+    needs: package
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: ubuntu-22.04, arch: x64, minimum: 18}
+          - {os: ubuntu-22.04-arm, arch: arm64, minimum: 18}
+          - {os: windows-2022, arch: x64, minimum: 18}
+          - {os: windows-11-arm, arch: arm64, minimum: 22}
+          - {os: macos-14, arch: arm64, minimum: 18}
+          - {os: macos-15-intel, arch: x64, minimum: 18}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '22'
+          architecture: ${{ matrix.arch }}
+          cache: npm
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: agentum-package
+          path: release-artifacts
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: ${{ matrix.minimum }}
+          architecture: ${{ matrix.arch }}
+      - run: npm run test:package -- release-artifacts/agentum-2.2.0.tgz
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '24'
+          architecture: ${{ matrix.arch }}
+      - run: npm run test:package -- release-artifacts/agentum-2.2.0.tgz
       - run: npm ci --no-audit --no-fund
       - run: npm test
-      - run: npm run test:package
+      - run: node --test tests/vnc-controls.test.cjs
+        env:
+          AGENTUM_INPUT_BACKEND: robotjs

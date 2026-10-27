@@ -39,7 +39,7 @@ Only install and authenticate the agents you plan to use.
 
 ## Quick Setup
 
-**Agentum 2.1.0 adds opt-in Rust input and media processing.** Download the built package from [GitHub Releases](https://github.com/priyankark/agentum-cli/releases/tag/v2.1.0) and install it with `npm install -g ./agentum-2.1.0.tgz`. The `npx agentum@latest` commands below use the latest version available on npm, which may lag the GitHub release. See [Rust setup](RUSTY_ROBOT.md).
+**The upcoming Agentum 2.2.0 uses Rust input and media processing by default.** The `npx agentum@latest` commands below install the version currently published on npm; check it with `npm view agentum version`. Version 2.1.0 uses the original backend by default. Built release packages are listed in [GitHub Releases](https://github.com/priyankark/agentum-cli/releases). See [Rust setup](RUSTY_ROBOT.md).
 
 Use **AirCodum Agentum 1.1 or later** on your phone. Connect your phone and computer to the **same Wi-Fi** for initial setup.
 
@@ -250,9 +250,9 @@ ifconfig | grep "inet "
 - [Repository](https://github.com/priyankark/agentum-cli)
 - [AirCodum](https://aircodum.com)
 
-### Experimental Rust input backend
+### Rust desktop engine
 
-An opt-in [Rusty Robot adapter](RUSTY_ROBOT.md) routes VNC mouse and keyboard
-input through Rust. Build it from source and set `AGENTUM_INPUT_BACKEND=rusty-robot`.
-RobotJS remains the default; capture/encoding and authenticated session controls
-are unchanged. See the guide for platform requirements and native verification.
+Rust handles desktop input, capture, screenshots, resize, and encoding by default.
+Agentum 2.2.0 includes native and terminal binaries for supported macOS, Windows,
+and Linux targets. Set `AGENTUM_INPUT_BACKEND=robotjs` to explicitly choose the
+original backend. See [platform support, permissions, and setup](RUSTY_ROBOT.md).
