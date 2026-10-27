@@ -1,76 +1,51 @@
-# Rusty Robot input backend (experimental)
+# Agentum with Rusty Robot
 
-Agentum can use [Rusty Robot](https://github.com/priyankark/rusty-robot) for its VNC
-mouse and keyboard input. RobotJS remains the default. Capture/encoding continues
-through the existing pipeline; this change makes no end-to-end speedup claim.
-
-Build from a source checkout with Node 22+ and Rust 1.88+ plus the native compiler
-for your OS (Xcode command line tools on macOS; MSVC Build Tools on Windows):
+This opt-in integration composes [Rusty Robot](https://github.com/priyankark/rusty-robot)'s
+input library, Rust media library and shared Node-API bridge. RobotJS remains the
+default during the preview. Selecting Rust enables native input and native media;
+configured Rust failures do not silently switch implementations.
 
 ```sh
 npm ci
-npm run build
 npm run build:rusty-robot
 AGENTUM_INPUT_BACKEND=rusty-robot node dist/index.js
 ```
 
-PowerShell: `$env:AGENTUM_INPUT_BACKEND = 'rusty-robot'` before starting Agentum.
-The build downloads the pinned Rust source/dependencies and produces
-`native/rusty-robot/agentum-rusty-robot.node` for the current host. It is a Node-API
-addon, not a standalone executable. No prebuilt binaries or automatic installation
-are provided. Use a source checkout for this preview.
+Build `npm run build` before launching. The build script fetches the exact Git
+revision in `native/rusty-robot/source.json`, builds with the checked-in Cargo lock,
+and copies this host's addon. Rust 1.88+, a platform linker, Node and Git are needed.
+For development only, `RUSTY_ROBOT_SOURCE=/absolute/trusted/checkout` overrides the
+source; `AGENTUM_RUSTY_ROBOT_PATH=/absolute/addon.node` overrides runtime loading.
+VS Code must inherit these variables in its extension host; a separate
+`--user-data-dir` avoids reusing a running instance with older environment settings.
+The preview addon is built per host, not bundled as a universal VSIX/npm binary.
 
-`AGENTUM_RUSTY_ROBOT_PATH` optionally selects an **absolute path** to a trusted addon
-built from this source. Selecting Rust and failing to load it reports an error;
-it does not silently switch to RobotJS. Unset `AGENTUM_INPUT_BACKEND` to roll back.
-The existing authenticated VNC protocol and session ownership still apply.
+## What runs in Rust
 
-macOS requires Accessibility for the Agentum host. Screen Recording is still
-needed by the existing capture pipeline. Linux requires an X11/XTest session;
-Windows requires an interactive desktop. A sleeping/disconnected display can
-make screen-size queries fail; resume the session before testing.
+Mouse, wheel, shortcuts, Unicode text, screen capture, image decode, SIMD/threaded
+resize, BLAKE3 frame fingerprints, JPEG and PNG encoding. The host retains
+authentication, transport, subscription scheduling and adaptive quality.
+`AGENTUM_MEDIA_BACKEND=robotjs|rusty-robot` can select media independently for
+diagnostics. `AGENTUM_CAPTURE_ADAPTIVE=0` fixes requested quality for comparisons.
 
-The adapter preserves normalized keys and native scroll units. Held movement uses
-Rust's explicit drag API. Release events update adapter state only after successful
-native delivery. Synchronous text input blocks Node while characters are sent;
-macOS retains Rusty Robot's 10 ms minimum interval per Unicode scalar. This initial
-adapter intentionally preserves synchronous ordering. Worker-based input and
-packaged cross-platform binaries are follow-up work.
+The worker bridge accepts at most two outstanding image jobs and uses a shared
+four-thread resize pool. Streaming keeps one capture in flight and discards late
+results after stop or settings changes. Unchanged pixels skip encoding; periodic
+refresh lets subscribers recover. Screenshots use the same Rust pipeline.
 
-## Verify
+macOS needs Accessibility for input and Screen Recording for capture, granted to
+the actual host. Input uses logical desktop coordinates; frame dimensions remain
+explicit in the protocol. Text batches preserve UTF-16 scalar boundaries and use
+native Return events. No clipboard paste or shell input synthesis is used.
 
-```sh
-npm test
-AGENTUM_INPUT_BACKEND=rusty-robot node --test tests/vnc-controls.test.cjs
-npm run test:rusty-robot:native
-```
+## Verification
 
-The first two commands verify adapter contracts and authenticated socket control
-with fake native outputs. The third uses the built addon for real queries and
-invalid-input checks without moving or typing. On Linux it needs an X11 session
-(or `xvfb-run -a npm run test:rusty-robot:native`).
+Run `npm test` for adapter/capture/authentication regressions.
+The native benchmark explicitly controls owned desktop fixtures; run only on an
+unlocked authorized desktop. It records failed text deliveries separately from
+timings, alternates backend order across three independent processes, and keeps
+1440×810 JPEG quality 85 at target 30 FPS with adaptation disabled for video.
+Host CPU excludes OS subprocesses/WindowServer; first-frame and ping latency are
+not glass-to-glass latency. See the public benchmark data for measured limits.
 
-For real macOS input into an owned AppKit window:
-
-```sh
-node tests/rusty-robot-native.cjs --gui
-```
-
-This exercises Agentum's authenticated WebSocket → input handler → Rust addon →
-AppKit. It asserts a button click, Unicode/multiline text, shortcut cleanup, Enter
-alias, and drag selection/cancellation. The test uses a stub for continuous screen
-streaming only; all input is native. Keep the desktop idle during the run. The
-fixture closes and pointer position is restored on completion. Optional
-`AGENTUM_RUSTY_EVIDENCE=/absolute/path/prefix` saves an owned-window PNG and JSON.
-No credentials or unrelated desktop captures are saved.
-
-Linux CI runs the same authenticated input scenario in an owned Electron window
-under Xvfb/Openbox. To reproduce on an available Linux desktop, install the fixture
-with `npm ci --prefix tests/fixtures/rusty-robot-electron`, run its Electron
-`install.js` if npm deferred it, then run the same `--gui` command. Target-window
-observations verify native delivery; input is never synthesized in JavaScript.
-
-The AppKit fixture derives from Rusty Robot, copyright (c) 2026 Priyankar Kumar and
-contributors, MIT; see this repository's LICENSE for the same permission terms.
-The integration was built by dogfooding Rusty Robot's bundled agent skill; detailed
-results are recorded in `NATIVE_VALIDATION.md`.
+The integration follows the [Rusty Robot agent skill](https://github.com/priyankark/rusty-robot/tree/main/skills/rusty-robot).

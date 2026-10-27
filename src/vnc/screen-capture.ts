@@ -1,3 +1,4 @@
+import { loadRustMedia, useRustMedia } from './rusty-media';
 /**
  * Screen capture manager for VNC functionality
  * Handles serialized frame capture and adaptive quality
@@ -129,6 +130,7 @@ export class ScreenCaptureManager {
   /**
    * Start the capture loop
    */
+  private qualityGeneration = 0;
   private generation = 0;
   private inFlight = false;
   private lastRefresh = 0;
@@ -144,6 +146,26 @@ export class ScreenCaptureManager {
       this.inFlight = true;
       const started = performance.now();
       try {
+        const qualityGeneration = this.qualityGeneration;
+        if (useRustMedia()) {
+          const result = await loadRustMedia().captureFrame(this.quality.width, this.quality.jpegQuality,
+            this.lastFrameHash, Date.now() - this.lastRefresh >= 1000, 'jpeg');
+          if (!active() || qualityGeneration !== this.qualityGeneration) return;
+          if (result.data) {
+            const dimensions = { width: result.width, height: result.height };
+            this.cachedDimensions = dimensions;
+            this.lastFrameHash = result.fingerprint;
+            this.lastRefresh = Date.now();
+            this.lastFrameSize = result.data.length;
+            this.framesSent++;
+            this.updatePerformanceMetrics(performance.now() - started);
+            for (const subscriber of this.subscribers) {
+              try { subscriber(result.data, dimensions); } catch { /* Isolate closed clients. */ }
+            }
+            this.adjustQualityIfNeeded();
+          }
+          return;
+        }
         const screen = getScreenSize();
         if (screen.width !== this.screenSize.width || screen.height !== this.screenSize.height) {
           this.screenSize = screen; this.cachedDimensions = this.getScaledDimensions(); this.lastFrameHash = null;
@@ -155,7 +177,7 @@ export class ScreenCaptureManager {
         if (hash !== this.lastFrameHash || Date.now() - this.lastRefresh >= 1000) {
           const dimensions = { ...this.cachedDimensions };
           const frame = await this.processFrame(raw, dimensions);
-          if (!active()) return;
+          if (!active() || qualityGeneration !== this.qualityGeneration) return;
           this.lastFrameHash = hash;
           this.lastRefresh = Date.now();
           this.lastFrameSize = frame.length;
@@ -249,6 +271,7 @@ export class ScreenCaptureManager {
    * Adjust quality settings based on performance
    */
   private adjustQualityIfNeeded(): void {
+    if (process.env.AGENTUM_CAPTURE_ADAPTIVE === '0') return;
     const now = Date.now();
     if (now - this.lastPerformanceCheck < this.PERFORMANCE_CHECK_INTERVAL) return;
 
@@ -325,6 +348,7 @@ export class ScreenCaptureManager {
     }
 
     if (changed) {
+      this.qualityGeneration++;
         this.lastFrameHash = null;
       this.resetPerformanceMetrics();
     }

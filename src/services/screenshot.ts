@@ -1,3 +1,4 @@
+import { loadRustMedia, useRustMedia } from '../vnc/rusty-media';
 /**
  * Platform-agnostic screenshot service
  */
@@ -36,7 +37,11 @@ export async function captureScreenshot(options?: ScreenshotOptions): Promise<Sc
     // Directory may already exist
   }
 
-  if (platform === 'darwin') {
+  if (useRustMedia()) {
+    const frame = await loadRustMedia().captureFrame(null, 85, null, true, format);
+    if (!frame.data) throw new Error('Rust capture returned no screenshot');
+    await fs.promises.writeFile(filePath, frame.data, { mode: 0o600 });
+  } else if (platform === 'darwin') {
     // macOS: use screencapture (no permission prompts after initial grant)
     execFileSync('screencapture', ['-x', '-t', format, filePath], { stdio: 'ignore' });
   } else if (platform === 'linux') {

@@ -24,7 +24,7 @@ assert.throws(() => addon.mouseToggle('invalid-state', 'left'), /Invalid/i);
 console.log(JSON.stringify({ stage: 'native-query-and-error-smoke', size, permissions, passed: true }));
 if (!process.argv.includes('--gui')) process.exit(0);
 assert.notEqual(permissions.accessibility, false, 'Grant Accessibility to the host before native input');
-process.env.AGENTUM_INPUT_BACKEND = 'rusty-robot';
+process.env.AGENTUM_INPUT_BACKEND ||= 'rusty-robot';
 process.env.AGENTUM_AUTH_TOKEN = randomBytes(32).toString('hex');
 const Module = require('node:module');
 const originalLoad = Module._load;
@@ -39,7 +39,8 @@ const { WebSocket } = require('ws');
 async function main() {
   const directory = mkdtempSync(join(tmpdir(), 'agentum-rusty-dogfood-'));
   let child, server, socket, control, fixtureServer;
-  const watchdog = setTimeout(() => { console.error('Native dogfood timed out'); child?.kill(); socket?.terminate(); process.exit(1); }, 30000);
+  const benchmarkPath = process.argv.find(arg => arg.startsWith('--benchmark='))?.slice('--benchmark='.length);
+  const watchdog = setTimeout(() => { console.error('Native dogfood timed out'); child?.kill(); socket?.terminate(); process.exit(1); }, benchmarkPath ? 120000 : 30000);
   try {
     let controlReady;
     if (process.platform === 'darwin') {
@@ -62,13 +63,13 @@ async function main() {
     const next = () => queue.length ? Promise.resolve(queue.shift()) : new Promise(resolve => waiting.push(resolve));
     const geometry = await next(); assert.equal(geometry.ready, true);
     await controlReady;
-    const state = async () => { await pause(150); control.write('{}\n'); const value = await next(); assert.equal(value.active, true, 'Owned fixture must retain focus'); return value; };
+    const state = async (delay = 150) => { if (delay) await pause(delay); control.write('{}\n'); const value = await next(); assert.equal(value.active, true, 'Owned fixture must retain focus'); return value; };
     server = new VNCServer(0, '127.0.0.1', { id: 'rusty-robot-dogfood', name: 'Owned Rusty Robot fixture' });
     await server.start();
     socket = new WebSocket(`ws://127.0.0.1:${server.getPort()}`, { headers: { Authorization: `Bearer ${process.env.AGENTUM_AUTH_TOKEN}`, Origin: 'aircodum://native' } });
     await once(socket, 'open');
-    const send = async messages => {
-      await state();
+    const send = async (messages, checkFocus = true) => {
+      if (checkFocus) await state();
       const pong = new Promise(resolve => { const listener = data => { if (JSON.parse(data).type === 'pong') { socket.off('message', listener); resolve(); } }; socket.on('message', listener); });
       for (const message of messages) socket.send(JSON.stringify(message));
       socket.send(JSON.stringify({ type: 'ping' })); await pong;
@@ -76,6 +77,55 @@ async function main() {
     const point = rect => ({ type: 'vnc_mouse_event', x: rect.x + Math.floor(rect.width / 2), y: rect.y + Math.floor(rect.height / 2), screenWidth: size.width, screenHeight: size.height, timestamp: Date.now() });
     const click = async rect => { const p = point(rect); await send([{ ...p, eventType: 'down', button: 'left' }, { ...p, eventType: 'up', button: 'left' }]); };
     await send([{ type: 'vnc_start' }]);
+    if (benchmarkPath) {
+      const { performance } = require('node:perf_hooks');
+      const modifier = process.platform === 'darwin' ? 'command' : 'control';
+      const tap = key => ({ type: 'vnc_keyboard_event', key });
+      const selectAll = { ...tap('a'), modifier: [modifier] };
+      const type = text => ({ type: 'vnc_type', text });
+      const clickMessages = rect => { const p = point(rect); return [{ ...p, eventType: 'down', button: 'left' }, { ...p, eventType: 'up', button: 'left' }]; };
+      const waitFor = async (predicate, timeout = 2000) => {
+        const began = performance.now(); let observed;
+        do { observed = await state(0); if (predicate(observed)) return { passed: true, observed }; await pause(2); }
+        while (performance.now() - began < timeout);
+        return { passed: false, observed };
+      };
+      const cases = [
+        { name: 'click_button', prepare: '', messages: () => clickMessages(geometry.button), verify: (s, before) => s.clicks === before.clicks + 1 },
+        { name: 'type_ascii_31', prepare: '', messages: () => [type('Agentum benchmark: hello world.')], verify: s => s.text === 'Agentum benchmark: hello world.' },
+        { name: 'type_unicode', prepare: '', messages: () => [type('Rust 🌍 中文 café')], verify: s => s.text === 'Rust 🌍 中文 café' },
+        { name: 'type_multiline', prepare: '', messages: () => [type('First line\nSecond line')], verify: s => s.text === 'First line\nSecond line' },
+        { name: 'shortcut_replace', prepare: 'replace me', messages: () => [selectAll, type('Replacement complete')], verify: s => s.text === 'Replacement complete' },
+        { name: 'edit_then_click', prepare: 'old text', messages: () => [selectAll, type('Ready 🌍'), ...clickMessages(geometry.button)], verify: (s, before) => s.text === 'Ready 🌍' && s.clicks === before.clicks + 1 },
+      ];
+      const results = [];
+      // One untimed warmup plus five recorded repetitions. Focus/reset and
+      // observation setup happen outside timing; native delivery is verified.
+      for (let repetition = -1; repetition < 5; repetition++) {
+        const rotated = [...cases.slice((repetition + 1) % cases.length), ...cases.slice(0, (repetition + 1) % cases.length)];
+        for (const spec of rotated) {
+          await send([...clickMessages(geometry.editor), selectAll, tap('backspace')]);
+          assert((await waitFor(s => s.text === '')).passed, 'Native reset must succeed');
+          if (spec.prepare) { await send([type(spec.prepare)]); assert((await waitFor(s => s.text === spec.prepare)).passed, 'Native setup must succeed'); }
+          const before = await state();
+          const started = performance.now();
+          await send(spec.messages(), false);
+          const dispatched = performance.now();
+          const observation = await waitFor(s => spec.verify(s, before));
+          const completed = performance.now();
+          if (repetition >= 0) results.push({ case: spec.name, repetition, dispatch_ms: dispatched - started,
+            delivered_ms: observation.passed ? completed - started : null, passed: observation.passed,
+            observed_text: observation.observed.text, observed_clicks: observation.observed.clicks });
+        }
+      }
+      writeFileSync(benchmarkPath, JSON.stringify({ backend: process.env.AGENTUM_INPUT_BACKEND, platform: process.platform,
+        node: process.version, robotjs: require('@hurdlegroup/robotjs/package.json').version,
+        size, repetitions: 5, warmups: 1, observation_poll_ms: 2,
+        transport: 'Authenticated loopback VNC socket, same-process client/server; native AppKit target; capture stream stubbed',
+        results }, null, 2));
+      console.log(JSON.stringify({ benchmark: benchmarkPath, passed: results.filter(r => r.passed).length, total: results.length }));
+      return;
+    }
     await click(geometry.button); assert.equal((await state()).clicks, 1);
     await click(geometry.editor);
     const text = 'AirCodum + Rusty Robot 🌍\nこんにちは';

@@ -1,4 +1,4 @@
-name: Rusty Robot input adapter
+name: Rusty Robot input and media
 on:
   pull_request:
     paths: ['native/rusty-robot/**', 'src/vnc/**', 'tests/*rusty*', 'tests/vnc-controls.test.cjs', 'scripts/build-rusty-robot.cjs', '.github/workflows/rusty-robot.yml']
@@ -24,8 +24,8 @@ jobs:
           components: rustfmt, clippy
       - run: npm ci --no-audit --no-fund
       - run: npm run build:rusty-robot
-      - run: cargo fmt --manifest-path native/rusty-robot/Cargo.toml --check
-      - run: cargo clippy --manifest-path native/rusty-robot/Cargo.toml --locked -- -D warnings
+      - run: cargo fmt --all --manifest-path native/rusty-robot/source/Cargo.toml --check
+      - run: cargo clippy --workspace --manifest-path native/rusty-robot/source/Cargo.toml --locked -- -D warnings
       - run: npm test
       - run: node --test tests/vnc-controls.test.cjs
         env:
