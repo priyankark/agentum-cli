@@ -2,6 +2,8 @@
 
 ## 2.2.0 — 2026-10-27
 
+- Keep capture configuration usable while the display is unavailable, recover captures after it returns, and make failed stream starts retryable without leaked subscriptions.
+
 - Fix missing Codex chat answers by supporting current and legacy CLI JSONL, preserving history and reporting empty/failed turns correctly.
 - Reject fractional and non-numeric capture settings before scheduling native work.
 

@@ -8,7 +8,7 @@ const npm = process.env.npm_execpath;
 if (!npm) throw new Error('Run this check through npm run test:package');
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, { encoding: 'utf8', timeout: 240000, ...options });
-  if (result.status !== 0) throw new Error(`${path.basename(command)} failed: ${result.stderr || result.stdout || result.error}`);
+  if (result.status !== 0) throw new Error(`${path.basename(command)} failed (${result.error?.message || result.signal || result.status}): ${result.stderr || result.stdout}`);
   return result.stdout;
 }
 try {

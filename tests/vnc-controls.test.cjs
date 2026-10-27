@@ -8,7 +8,8 @@ const rustSelected = (process.env.AGENTUM_INPUT_BACKEND || 'rusty-robot') === 'r
 const events = [], subscribers = new Set();
 const manager = { subscribe(callback) { subscribers.add(callback); return () => subscribers.delete(callback); }, updateQualitySettings() {} };
 const originalLoad = Module._load;
-const robot = { getScreenSize: () => ({ width: 1600, height: 1000 }),
+let displayAvailable = true;
+const robot = { getScreenSize: () => { if (!displayAvailable) throw Error('No main display is available'); return { width: 1600, height: 1000 }; },
   moveMouse: (...args) => events.push(['move', ...args]), mouseToggle: (...args) => events.push(['button', ...args]),
   scrollMouse: (...args) => events.push(['scroll', ...args]), keyTap: (...args) => events.push(['key', ...args]),
   keyToggle() {}, typeString: (...args) => events.push(['text', ...args]) };
@@ -94,4 +95,23 @@ test('VNC heartbeat independently disconnects a silent client and releases its d
     assert.deepEqual(events.at(-1), ['button', 'up', 'left']);
     assert.equal(server.getClientCount(), 0);
   } finally { await server.shutdown(); }
+});
+
+
+test('starting without a display reports failure without leaking a subscription, then retries', { timeout: 5000 }, async () => {
+  const server = new VNCServer(0, '127.0.0.1', { id: 'display-test', name: 'Display recovery' });
+  await server.start();
+  try {
+    const socket = await connect(server);
+    displayAvailable = false;
+    await start(socket);
+    assert.equal(subscribers.size, 0);
+    assert(!socket.messages.some(message => message.type === 'vnc_started'));
+    assert(socket.messages.some(message => message.type === 'vnc_error' && /Desktop unavailable/.test(message.error)));
+    displayAvailable = true;
+    await start(socket);
+    assert.equal(subscribers.size, 1);
+    assert(socket.messages.some(message => message.type === 'vnc_started' && message.dimensions.width === 1600));
+  } finally { displayAvailable = true; await server.shutdown(); }
+  assert.equal(subscribers.size, 0);
 });

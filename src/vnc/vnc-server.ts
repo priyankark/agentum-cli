@@ -137,19 +137,26 @@ class VNCConnection {
   private startStreaming(): void {
     if (this.isStreaming) return;
 
+    let dimensions;
+    try { dimensions = getScreenSize(); }
+    catch {
+      this.sendError('Desktop unavailable. Wake or reconnect the display, then start streaming again.');
+      return;
+    }
+
     console.log(`[VNC] Client ${this.clientId} started streaming`);
-    this.isStreaming = true;
 
     // Subscribe to frame updates
     const manager = ScreenCaptureManager.getInstance();
     this.unsubscribe = manager.subscribe((frame, dimensions) => {
       this.sendFrame(frame, dimensions);
     });
+    this.isStreaming = true;
 
     // Send started confirmation
     this.send({
       type: 'vnc_started',
-      dimensions: getScreenSize(),
+      dimensions,
       timestamp: Date.now(),
     });
   }
