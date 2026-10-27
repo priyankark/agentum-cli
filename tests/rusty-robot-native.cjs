@@ -8,6 +8,7 @@ const { mkdtempSync, rmSync, writeFileSync } = require('node:fs');
 const { tmpdir } = require('node:os');
 const { join, resolve } = require('node:path');
 const { randomBytes } = require('node:crypto');
+const { createServer } = require('node:net');
 const { setTimeout: pause } = require('node:timers/promises');
 const addon = require('../native/rusty-robot/agentum-rusty-robot.node');
 const original = addon.getMousePos();
@@ -22,8 +23,7 @@ assert.throws(() => addon.keyTap('not-a-native-key'), /Invalid|Unknown|Unsupport
 assert.throws(() => addon.mouseToggle('invalid-state', 'left'), /Invalid/i);
 console.log(JSON.stringify({ stage: 'native-query-and-error-smoke', size, permissions, passed: true }));
 if (!process.argv.includes('--gui')) process.exit(0);
-assert.equal(process.platform, 'darwin', '--gui currently uses the owned AppKit target');
-assert.equal(permissions.accessibility, true, 'Grant Accessibility to the host before native input');
+assert.notEqual(permissions.accessibility, false, 'Grant Accessibility to the host before native input');
 process.env.AGENTUM_INPUT_BACKEND = 'rusty-robot';
 process.env.AGENTUM_AUTH_TOKEN = randomBytes(32).toString('hex');
 const Module = require('node:module');
@@ -38,18 +38,31 @@ Module._load = originalLoad;
 const { WebSocket } = require('ws');
 async function main() {
   const directory = mkdtempSync(join(tmpdir(), 'agentum-rusty-dogfood-'));
-  let child, server, socket;
+  let child, server, socket, control, fixtureServer;
   const watchdog = setTimeout(() => { console.error('Native dogfood timed out'); child?.kill(); socket?.terminate(); process.exit(1); }, 30000);
   try {
-    const compile = spawnSync('swiftc', [join(__dirname, 'fixtures/rusty-robot-macos.swift'), '-o', join(directory, 'target')], { encoding: 'utf8' });
-    assert.equal(compile.status, 0, compile.stderr);
-    child = spawn(join(directory, 'target'), [], { stdio: ['pipe', 'pipe', 'inherit'] });
+    let controlReady;
+    if (process.platform === 'darwin') {
+      const compile = spawnSync('swiftc', [join(__dirname, 'fixtures/rusty-robot-macos.swift'), '-o', join(directory, 'target')], { encoding: 'utf8' });
+      assert.equal(compile.status, 0, compile.stderr);
+      child = spawn(join(directory, 'target'), [], { stdio: ['pipe', 'pipe', 'inherit'] });
+      control = child.stdin;
+    } else {
+      fixtureServer = createServer();
+      fixtureServer.listen(0, '127.0.0.1'); await once(fixtureServer, 'listening');
+      controlReady = once(fixtureServer, 'connection').then(([stream]) => { control = stream; });
+      const electron = require('./fixtures/rusty-robot-electron/node_modules/electron');
+      child = spawn(electron, [...(process.platform === 'linux' ? ['--no-sandbox'] : []), join(__dirname, 'fixtures/rusty-robot-electron/main.cjs')], {
+        env: { ...process.env, AGENTUM_FIXTURE_PORT: String(fixtureServer.address().port) }, stdio: ['ignore', 'pipe', 'inherit'],
+      });
+    }
     const lines = createInterface({ input: child.stdout });
     const queue = [], waiting = [];
     lines.on('line', line => { const value = JSON.parse(line); if (waiting.length) waiting.shift()(value); else queue.push(value); });
     const next = () => queue.length ? Promise.resolve(queue.shift()) : new Promise(resolve => waiting.push(resolve));
     const geometry = await next(); assert.equal(geometry.ready, true);
-    const state = async () => { await pause(150); child.stdin.write('{}\n'); const value = await next(); assert.equal(value.active, true, 'Owned fixture must retain focus'); return value; };
+    await controlReady;
+    const state = async () => { await pause(150); control.write('{}\n'); const value = await next(); assert.equal(value.active, true, 'Owned fixture must retain focus'); return value; };
     server = new VNCServer(0, '127.0.0.1', { id: 'rusty-robot-dogfood', name: 'Owned Rusty Robot fixture' });
     await server.start();
     socket = new WebSocket(`ws://127.0.0.1:${server.getPort()}`, { headers: { Authorization: `Bearer ${process.env.AGENTUM_AUTH_TOKEN}`, Origin: 'aircodum://native' } });
@@ -67,31 +80,32 @@ async function main() {
     await click(geometry.editor);
     const text = 'AirCodum + Rusty Robot 🌍\nこんにちは';
     await send([{ type: 'vnc_type', text }]); assert.equal((await state()).text, text);
-    await send([{ type: 'vnc_keyboard_event', key: 'a', modifier: ['command'] }, { type: 'vnc_type', text: 'After shortcut' }]);
+    await send([{ type: 'vnc_keyboard_event', key: 'a', modifier: [process.platform === 'darwin' ? 'command' : 'control'] }, { type: 'vnc_type', text: 'After shortcut' }]);
     assert.equal((await state()).text, 'After shortcut');
     await send([{ type: 'vnc_keyboard_event', key: 'return' }, { type: 'vnc_type', text: 'Second line' }]);
     assert.equal((await state()).text, 'After shortcut\nSecond line');
     // Exercise held movement through the socket and require native text selection.
-    await send([{ type: 'vnc_keyboard_event', key: 'a', modifier: ['command'] }, { type: 'vnc_type', text: 'Drag selection works' }]);
+    await send([{ type: 'vnc_keyboard_event', key: 'a', modifier: [process.platform === 'darwin' ? 'command' : 'control'] }, { type: 'vnc_type', text: 'Drag selection works' }]);
     const drag = { ...point(geometry.editor), x: geometry.editor.x + 8, y: geometry.editor.y + 12 };
     await send([{ ...drag, eventType: 'down', button: 'left' }, { ...drag, x: drag.x + 125, eventType: 'move' }, { type: 'vnc_input_reset' }]);
     const selected = await state(); assert(selected.selectionLength > 0, JSON.stringify(selected));
-    await send([{ type: 'vnc_keyboard_event', key: 'a', modifier: ['command'] }, { type: 'vnc_type', text: 'Rusty Robot dogfood passed ✅' }]);
+    await send([{ type: 'vnc_keyboard_event', key: 'a', modifier: [process.platform === 'darwin' ? 'command' : 'control'] }, { type: 'vnc_type', text: 'Rusty Robot dogfood passed ✅' }]);
     const final = await state(); assert.equal(final.text, 'Rusty Robot dogfood passed ✅');
-    if (process.env.AGENTUM_RUSTY_EVIDENCE) {
+    if (process.env.AGENTUM_RUSTY_EVIDENCE && process.platform === 'darwin') {
       const destination = resolve(process.env.AGENTUM_RUSTY_EVIDENCE);
       const { x, y, width, height } = geometry.window;
       const screenshot = spawnSync('/usr/sbin/screencapture', ['-x', '-R', `${x},${y},${width},${height}`, destination + '.png']);
       assert.equal(screenshot.status, 0);
       writeFileSync(destination + '.json', JSON.stringify({ platform: process.platform, size, final, passed: true }, null, 2));
     }
-    console.log(JSON.stringify({ stage: 'authenticated-socket-to-AppKit', button: true, unicode: true, multiline: true, shortcutCleanup: true, dragSelection: true, passed: true }));
+    console.log(JSON.stringify({ stage: 'authenticated-socket-to-native-window', platform: process.platform, button: true, unicode: true, multiline: true, shortcutCleanup: true, dragSelection: true, passed: true }));
   } finally {
     socket?.terminate();
     await server?.shutdown();
-    if (child) { const exited = once(child, 'exit'); child.stdin.end(); await exited; }
+    if (child) { const exited = once(child, 'exit'); control?.end(); if (!control) child.kill(); await exited; }
     for (const key of ['shift', 'control', 'alt', 'command']) { try { addon.keyToggle(key, 'up'); } catch {} }
     try { addon.mouseToggle('up', 'left'); addon.moveMouse(original.x, original.y); } catch {}
+    fixtureServer?.close();
     clearTimeout(watchdog); rmSync(directory, { recursive: true, force: true });
   }
 }
