@@ -1,3 +1,4 @@
+process.env.AGENTUM_INPUT_BACKEND = 'robotjs'; // Explicit legacy-backend compatibility coverage.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const Module = require('node:module');

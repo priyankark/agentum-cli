@@ -117,7 +117,7 @@ export function initializeRobot(): boolean {
 
   try {
     // Dynamic import to handle cases where native module isn't available
-    const backend = process.env.AGENTUM_INPUT_BACKEND || 'robotjs';
+    const backend = process.env.AGENTUM_INPUT_BACKEND || 'rusty-robot';
     if (backend !== 'robotjs' && backend !== 'rusty-robot') {
       throw new Error(`Unknown AGENTUM_INPUT_BACKEND: ${backend}`);
     }
@@ -147,7 +147,7 @@ export function getScreenSize(): ScreenDimensions {
  */
 export function handleMouseEvent(event: VNCMouseEvent): void {
   if (!robot && !initializeRobot()) {
-    console.error('[VNC Input] robotjs not available for mouse events');
+    console.error('[VNC Input] Input backend not available for mouse events');
     return;
   }
 
@@ -225,7 +225,7 @@ function normalizeModifiers(modifiers: string | string[] | undefined): string[] 
  */
 export function handleKeyboardEvent(event: VNCKeyboardEvent): void {
   if (!robot && !initializeRobot()) {
-    console.error('[VNC Input] robotjs not available for keyboard events');
+    console.error('[VNC Input] Input backend not available for keyboard events');
     return;
   }
 
@@ -258,7 +258,7 @@ export function handleKeyboardEvent(event: VNCKeyboardEvent): void {
  */
 export function typeString(text: string): void {
   if (!robot && !initializeRobot()) {
-    console.error('[VNC Input] robotjs not available for typing');
+    console.error('[VNC Input] Input backend not available for typing');
     return;
   }
 
@@ -275,7 +275,7 @@ export function typeString(text: string): void {
  */
 export function typeCharacter(char: string): void {
   if (!robot && !initializeRobot()) {
-    console.error('[VNC Input] robotjs not available for typing character');
+    console.error('[VNC Input] Input backend not available for typing character');
     return;
   }
 
@@ -312,7 +312,7 @@ export function typeCharacter(char: string): void {
  */
 export function typeText(text: string, pressEnter: boolean = false): void {
   if (!robot && !initializeRobot()) {
-    console.error('[VNC Input] robotjs not available for typing');
+    console.error('[VNC Input] Input backend not available for typing');
     return;
   }
 
@@ -331,7 +331,7 @@ export function typeText(text: string, pressEnter: boolean = false): void {
  */
 export function keyCombo(key: string, modifiers: string[]): void {
   if (!robot && !initializeRobot()) {
-    console.error('[VNC Input] robotjs not available for key combo');
+    console.error('[VNC Input] Input backend not available for key combo');
     return;
   }
 
@@ -349,7 +349,7 @@ export function keyCombo(key: string, modifiers: string[]): void {
  */
 export function keyToggle(key: string, down: boolean, modifiers?: string[]): void {
   if (!robot && !initializeRobot()) {
-    console.error('[VNC Input] robotjs not available for key toggle');
+    console.error('[VNC Input] Input backend not available for key toggle');
     return;
   }
 

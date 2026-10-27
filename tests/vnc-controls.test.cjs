@@ -4,6 +4,7 @@ const { once } = require('node:events');
 const Module = require('node:module');
 const { WebSocket } = require('ws');
 process.env.AGENTUM_AUTH_TOKEN = 'e'.repeat(64);
+const rustSelected = (process.env.AGENTUM_INPUT_BACKEND || 'rusty-robot') === 'rusty-robot';
 const events = [], subscribers = new Set();
 const manager = { subscribe(callback) { subscribers.add(callback); return () => subscribers.delete(callback); }, updateQualitySettings() {} };
 const originalLoad = Module._load;
@@ -13,7 +14,7 @@ const robot = { getScreenSize: () => ({ width: 1600, height: 1000 }),
   keyToggle() {}, typeString: (...args) => events.push(['text', ...args]) };
 Module._load = function(name, ...args) {
   if (name === '@hurdlegroup/robotjs') return robot;
-  if (process.env.AGENTUM_INPUT_BACKEND === 'rusty-robot' && name.endsWith('agentum-rusty-robot.node')) {
+  if (rustSelected && (name === '@priyankark/rusty-robot' || name.endsWith('agentum-rusty-robot.node'))) {
     return { ...robot, getPermissions: () => ({ accessibility: true }),
       dragMouse: (...args) => events.push(['drag', ...args]) };
   }
@@ -48,7 +49,7 @@ test('actual VNC socket controls scale points, scroll, right-click and cancel sa
     await start(a); await start(b); assert.equal(subscribers.size, 2);
     await barrier(a, [{ ...pointer, eventType: 'down', button: 'right' }, { ...pointer, eventType: 'up', button: 'right' },
       { ...pointer, type: 'vnc_scroll', deltaX: 2, deltaY: -3 }]);
-    assert.deepEqual(events.splice(0), [ ['move', 800, 500], ['button', 'down', 'right'], (process.env.AGENTUM_INPUT_BACKEND === 'rusty-robot' ? ['drag', 800, 500, 'right'] : ['move', 800, 500]), ['button', 'up', 'right'], ['move', 800, 500], ['scroll', input.nativeScrollDelta(2), input.nativeScrollDelta(-3)] ]);
+    assert.deepEqual(events.splice(0), [ ['move', 800, 500], ['button', 'down', 'right'], (rustSelected ? ['drag', 800, 500, 'right'] : ['move', 800, 500]), ['button', 'up', 'right'], ['move', 800, 500], ['scroll', input.nativeScrollDelta(2), input.nativeScrollDelta(-3)] ]);
     await barrier(a, [{ ...pointer, eventType: 'down' }, { ...pointer, x: 600 }]);
     const before = events.length;
     await barrier(b, [{ ...pointer, eventType: 'up' }, { type: 'vnc_input_reset' }]);

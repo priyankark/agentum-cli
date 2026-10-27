@@ -1,6 +1,6 @@
 {
   "name": "agentum",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "Mirror terminal sessions and AI coding agents to mobile over WebSocket",
   "main": "dist/index.js",
   "bin": {
@@ -20,7 +20,8 @@
     "test:package": "node scripts/verify-package-install.cjs",
     "build:rusty-robot": "node scripts/build-rusty-robot.cjs",
     "test:rusty-robot": "npm run build && node --test tests/rusty-robot.test.cjs",
-    "test:rusty-robot:native": "node tests/rusty-robot-native.cjs"
+    "test:rusty-robot:native": "node tests/rusty-robot-native.cjs",
+    "prepare:release": "node scripts/prepare-release.cjs"
   },
   "keywords": [
     "vibe-coding",
@@ -34,7 +35,7 @@
     "terminal-mirror",
     "afk-coding"
   ],
-  "author": "AirCodum (https://aircodum.com)",
+  "author": "priyankark",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -45,14 +46,14 @@
   },
   "homepage": "https://github.com/priyankark/agentum-cli#readme",
   "dependencies": {
-    "@hurdlegroup/robotjs": "^0.12.2",
     "chalk": "^4.1.2",
     "commander": "^11.1.0",
     "jimp": "^1.6.0",
     "node-pty": "1.1.0",
     "qrcode": "^1.5.4",
     "screenshot-desktop": "^1.15.2",
-    "ws": "^8.16.0"
+    "ws": "^8.16.0",
+    "@priyankark/rusty-robot": "https://github.com/priyankark/rusty-robot/releases/download/v0.1.2/priyankark-rusty-robot-0.1.2.tgz"
   },
   "devDependencies": {
     "@types/node": "^20.10.6",
@@ -77,5 +78,11 @@
     "COMPATIBILITY.md",
     "CHANGELOG.md",
     "LICENSE"
+  ],
+  "optionalDependencies": {
+    "@hurdlegroup/robotjs": "^0.12.2"
+  },
+  "bundleDependencies": [
+    "node-pty"
   ]
 }
